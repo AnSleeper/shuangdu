@@ -362,7 +362,17 @@ fun TtsPanel(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onJumpToChapter(ch) }
+                            .clickable {
+                                // 跳文本 + 播放器定位到这一章；原本暂停就保持暂停
+                                onJumpToChapter(ch)
+                                val segs = index.segmentsOf(ch)
+                                if (segs.any { it.done }) {
+                                    val wasPlaying = container.ttsPlayer.state.value.playing
+                                    container.ttsPlayer.play(book.id, ch, segs, 0, dir)
+                                    container.ttsPlayer.setSpeed(tts.speed)
+                                    if (!wasPlaying) container.ttsPlayer.pause()
+                                }
+                            }
                             .padding(horizontal = 6.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

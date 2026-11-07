@@ -1,4 +1,4 @@
-package com.shuangdu.reader.ui.reader
+﻿package com.shuangdu.reader.ui.reader
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -17,6 +17,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import kotlin.math.absoluteValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +51,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -62,6 +68,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -135,6 +143,7 @@ fun ReaderScreen(
     var textArea by remember { mutableStateOf(IntSize.Zero) }
     var rootSize by remember { mutableStateOf(IntSize.Zero) }
     val ttsIndex = remember(book.id) { container.ttsConverter.indexOf(book) }
+    val ttsDir = remember(book.id) { java.io.File(container.repository.bookDir(book.id), "tts") }
     val playerState by container.ttsPlayer.state.collectAsStateWithLifecycle()
     val ttsCfg by container.ttsSettings.state.collectAsStateWithLifecycle()
 
@@ -239,6 +248,24 @@ fun ReaderScreen(
         if (nx >= chapters.size) return
         anchor = 0
         engine.moveToChapter(nx, 0)
+    }
+
+    /** 底部栏「上一章」：直接跳到上一章开头（而不是翻一页） */
+    fun prevChapterJump() {
+        val pv = engine.chapterIndex - 1
+        if (pv < 0) return
+        anchor = 0
+        engine.moveToChapter(pv, 0)
+    }
+
+    /** 上下滑动模式下往上滑过头：落到上一章的最后一页，接着往上读 */
+    fun prevChapterEnd() {
+        val pv = engine.chapterIndex - 1
+        if (pv < 0) return
+        val lastPage = ((engine.layouts[pv]?.pageCount ?: 1) - 1).coerceAtLeast(0)
+        anchor = 0
+        engine.moveToChapter(pv, lastPage)
+        anchor = engine.charOffsetNow()
     }
 
     fun jumpToChapter(index: Int) {
@@ -358,8 +385,11 @@ fun ReaderScreen(
                     engine = engine,
                     pageHeightPx = textArea.height,
                     hasNextChapter = engine.chapterIndex + 1 < chapters.size,
+                    hasPrevChapter = engine.chapterIndex > 0,
+                    prevTitle = engine.titleOf(engine.chapterIndex - 1),
                     onTapCenter = { showUi = !showUi },
                     onNextChapter = { nextChapter() },
+                    onPrevChapter = { prevChapterEnd() },
                     onPageSettled = { offset -> anchor = offset }
                 )
             } else {
@@ -456,8 +486,8 @@ fun ReaderScreen(
                 chapterIndex = engine.chapterIndex,
                 total = chapters.size,
                 onChapters = { showChapters = true },
-                onPrev = { goPrev() },
-                onNext = { goNext() },
+                onPrev = { prevChapterJump() },
+                onNext = { nextChapter() },
                 onSettings = { showSettings = true },
                 onTts = { showTts = true },
                 onSeek = { jumpToChapter(it) }
@@ -505,64 +535,68 @@ fun ReaderScreen(
                             dragY += amount.y
                         }
                     }
-                    .clip(RoundedCornerShape(27.dp))
+                    .clip(RoundedCornerShape(50))
                     .background(Color.Black.copy(alpha = 0.72f))
                     .clickable { showTts = true }
-                    .padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(
                     if (playerState.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     if (playerState.playing) "暂停" else "继续",
                     tint = Color.White,
                     modifier = Modifier
-                        .size(26.dp)
+                        .size(24.dp)
                         .clickable {
                             if (playerState.playing) container.ttsPlayer.pause()
                             else container.ttsPlayer.resume()
                         }
                 )
-                Spacer(Modifier.width(8.dp))
-                Spacer(Modifier.width(6.dp))
-                Column(
-                    Modifier.weight(1f).clickable { showTts = true },
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        if (playerState.playing) "播放中" else "已暂停",
-                        fontSize = 10.sp,
-                        color = Color.White,
-                        maxLines = 1
-                    )
-                    Text(
-                        if (playerState.timerRemainingMs > 0) {
-                            "剩 %d:%02d".format(
-                                playerState.timerRemainingMs / 60000,
-                                (playerState.timerRemainingMs / 1000) % 60
-                            )
-                        } else {
-                            "第 ${playerState.chapter + 1} 章"
-                        },
-                        fontSize = 9.sp,
-                        color = Color.White.copy(alpha = 0.75f),
-                        maxLines = 1
-                    )
-                }
                 Icon(
                     Icons.Rounded.CenterFocusStrong,
                     "跳到正在读的段落",
                     tint = Color.White,
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(21.dp)
                         .clickable { snapTick++ }
                 )
-                Spacer(Modifier.width(7.dp))
+                Icon(
+                    Icons.Rounded.Headphones,
+                    "从本页开始听",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(21.dp)
+                        .clickable {
+                            val segs = ttsIndex.segmentsOf(engine.chapterIndex)
+                            if (segs.any { it.done }) {
+                                container.ttsPlayer.play(
+                                    book.id,
+                                    engine.chapterIndex,
+                                    segs,
+                                    startSegmentOfCurrentPage(),
+                                    ttsDir
+                                )
+                                container.ttsPlayer.setSpeed(ttsCfg.speed)
+                            }
+                        }
+                )
+                if (playerState.timerRemainingMs > 0) {
+                    Text(
+                        "%d:%02d".format(
+                            playerState.timerRemainingMs / 60000,
+                            (playerState.timerRemainingMs / 1000) % 60
+                        ),
+                        fontSize = 10.sp,
+                        color = Color.White
+                    )
+                }
                 Icon(
                     Icons.Rounded.Close,
                     "退出听书",
                     tint = Color.White.copy(alpha = 0.85f),
                     modifier = Modifier
-                        .size(18.dp)
+                        .size(19.dp)
                         .clickable { container.ttsPlayer.stop() }
                 )
             }
@@ -600,44 +634,116 @@ fun ReaderScreen(
     }
 }
 
-/** 上下滑动模式：一页一个块，竖向连续滚，滚到底点「下一章」 */
+/** 上下滑动模式：一页一个块，竖向连续滚；滑过头自动切上一章/下一章 */
 @Composable
 private fun ScrollReader(
     engine: ReaderEngine,
     pageHeightPx: Int,
     hasNextChapter: Boolean,
+    hasPrevChapter: Boolean,
+    prevTitle: String,
     onTapCenter: () -> Unit,
     onNextChapter: () -> Unit,
+    onPrevChapter: () -> Unit,
     onPageSettled: (Int) -> Unit
 ) {
     val pages = engine.currentPageCount()
-    val initial = engine.page.coerceIn(0, (pages - 1).coerceAtLeast(0))
+    val header = if (hasPrevChapter) 1 else 0
+    val initial = engine.page.coerceIn(0, (pages - 1).coerceAtLeast(0)) + header
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initial)
     val density = LocalDensity.current
     var lastChapter by remember { mutableIntStateOf(engine.chapterIndex) }
+    var lastSwitch by remember { mutableLongStateOf(0L) }
+    val threshold = with(density) { 30.dp.toPx() }
+
+    // 已经滑到本章边界还继续滑 → 自动切章（带 900ms 防抖）
+    // 注意：连接只创建一次（不能用会变的 lambda 当 remember key，否则滚动中每帧重组会把 accum 清零）
+    val hasNext by rememberUpdatedState(hasNextChapter)
+    val hasPrev by rememberUpdatedState(hasPrevChapter)
+    val nextCb by rememberUpdatedState(onNextChapter)
+    val prevCb by rememberUpdatedState(onPrevChapter)
+    val nested = remember {
+        object : NestedScrollConnection {
+            var accum = 0f
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y.absoluteValue > 2f) {
+                    android.util.Log.d("ScrollSwitch", "y=${available.y.toInt()} canF=${listState.canScrollForward} canB=${listState.canScrollBackward}")
+                }
+                val now = System.currentTimeMillis()
+                if (now - lastSwitch < 900) return Offset.Zero
+                when {
+                    available.y > 0f && hasPrev && !listState.canScrollBackward -> {
+                        accum += available.y
+                        if (accum > threshold) {
+                            accum = 0f
+                            lastSwitch = now
+                            prevCb()
+                        }
+                    }
+
+                    available.y < 0f && hasNext && !listState.canScrollForward -> {
+                        accum += -available.y
+                        if (accum > threshold) {
+                            accum = 0f
+                            lastSwitch = now
+                            nextCb()
+                        }
+                    }
+
+                    else -> accum = 0f
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     LaunchedEffect(engine.chapterIndex) {
         if (engine.chapterIndex != lastChapter) {
             lastChapter = engine.chapterIndex
-            listState.scrollToItem(0)
+            listState.scrollToItem(header)
         }
     }
-    LaunchedEffect(listState, pages) {
+    LaunchedEffect(listState, pages, header) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
-            if (idx in 0 until pages && idx != engine.page) {
-                engine.page = idx
+            val page = idx - header
+            if (page in 0 until pages && page != engine.page) {
+                engine.page = page
                 onPageSettled(engine.charOffsetNow())
             }
         }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-            detectTapGestures { onTapCenter() }
-        },
-        contentPadding = PaddingValues(0.dp)
-    ) {
+    Box(Modifier.fillMaxSize().nestedScroll(nested)) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+                detectTapGestures { onTapCenter() }
+            },
+            contentPadding = PaddingValues(0.dp)
+        ) {
+        if (hasPrevChapter) {
+            item(key = "header") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPrevChapter() }
+                        .padding(vertical = 24.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.KeyboardArrowUp,
+                        null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (prevTitle.isNotBlank()) "上一章 · $prevTitle" else "上一章",
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
         items(pages) { i ->
             val src = engine.current
             Canvas(
@@ -672,6 +778,7 @@ private fun ScrollReader(
                 }
             }
         }
+    }
     }
 }
 

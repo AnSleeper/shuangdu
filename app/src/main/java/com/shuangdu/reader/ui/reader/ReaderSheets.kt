@@ -82,7 +82,7 @@ fun ReaderSettingsSheet(
         Column(
             Modifier
                 .padding(horizontal = 22.dp)
-                .padding(bottom = 28.dp)
+                .padding(bottom = 64.dp)
         ) {
             Text("字体大小", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {

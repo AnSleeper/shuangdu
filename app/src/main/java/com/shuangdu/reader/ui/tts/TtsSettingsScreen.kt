@@ -65,7 +65,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuangdu.reader.AppContainer
 import com.shuangdu.reader.tts.TtsModels
 import com.shuangdu.reader.tts.VoiceItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -298,6 +300,71 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                         )
                     }
                 }
+
+                item {
+                    Spacer(Modifier.height(24.dp))
+                    SectionTitle("音频存储")
+                    var usage by remember { mutableStateOf<List<Triple<String, String, Long>>>(emptyList()) }
+                    var scanning by remember { mutableStateOf(true) }
+                    LaunchedEffect(Unit) {
+                        usage = scanAudioUsage(container)
+                        scanning = false
+                    }
+                    when {
+                        scanning -> Text(
+                            "统计中…",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        usage.isEmpty() -> Text(
+                            "还没有生成过音频",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        else -> {
+                            val totalMb = usage.sumOf { it.third } / 1048576f
+                            Text(
+                                "共 ${usage.size} 本书有音频，占 %.1f MB".format(totalMb),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            usage.forEach { u ->
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            u.second,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "%.1f MB".format(u.third / 1048576f),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    TextButton(onClick = {
+                                        if (container.ttsPlayer.state.value.bookId == u.first) {
+                                            container.ttsPlayer.stop()
+                                        }
+                                        container.ttsConverter.forget(u.first)
+                                        java.io.File(container.repository.bookDir(u.first), "tts")
+                                            .deleteRecursively()
+                                        scope.launch { usage = scanAudioUsage(container) }
+                                    }) { Text("删除") }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -314,6 +381,19 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
         )
     }
 }
+
+/** 扫描每本书的音频占用（tts 目录，不含索引文件） */
+private suspend fun scanAudioUsage(container: AppContainer): List<Triple<String, String, Long>> =
+    withContext(Dispatchers.IO) {
+        container.library.books.value.mapNotNull { b ->
+            val dir = java.io.File(container.repository.bookDir(b.id), "tts")
+            if (!dir.exists()) return@mapNotNull null
+            val bytes = dir.walkTopDown()
+                .filter { it.isFile && it.name != "index.json" && it.name != "index.json.tmp" }
+                .sumOf { it.length() }
+            if (bytes <= 0L) null else Triple(b.id, b.title, bytes)
+        }
+    }
 
 @Composable
 private fun SectionTitle(text: String) {
