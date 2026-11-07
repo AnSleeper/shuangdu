@@ -1,4 +1,4 @@
-package com.shuangdu.reader.ui.theme
+﻿package com.shuangdu.reader.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -73,18 +73,18 @@ private val INK_GREEN = SkinPalette(
 
 private val DUSK_PINK = SkinPalette(
     skin = Skin.DUSK_PINK,
-    appBg = Color(0xFF1A1416),
-    surface = Color(0xFF221A1D),
-    surfaceVariant = Color(0xFF2A2024),
+    appBg = Color(0xFF2A1D21),
+    surface = Color(0xFF34242A),
+    surfaceVariant = Color(0xFF3E2C33),
     text = Color(0xFFF1E1E5),
     sub = Color(0xFFB2969E),
     primary = Color(0xFFD98BA0),
     onPrimary = Color(0xFF2A1016),
-    primaryContainer = Color(0xFF3A2529),
+    primaryContainer = Color(0xFF3E282D),
     onPrimaryContainer = Color(0xFFF6DBE2),
-    outline = Color(0xFF31262A),
-    readBg = Color(0xFF241A1D),
-    readBg2 = Color(0xFF1B1416),
+    outline = Color(0xFF382B2F),
+    readBg = Color(0xFF2C1F24),
+    readBg2 = Color(0xFF22181C),
     readText = Color(0xFFEEDCE0),
     readSub = Color(0xFFA98A93),
     readLine = Color(0x33D98BA0)
@@ -92,18 +92,18 @@ private val DUSK_PINK = SkinPalette(
 
 private val INK_BLUE = SkinPalette(
     skin = Skin.INK_BLUE,
-    appBg = Color(0xFF12161C),
-    surface = Color(0xFF191F27),
-    surfaceVariant = Color(0xFF1F262F),
+    appBg = Color(0xFF1A2130),
+    surface = Color(0xFF222B3B),
+    surfaceVariant = Color(0xFF2A3546),
     text = Color(0xFFDFE6EF),
     sub = Color(0xFF95A2B3),
     primary = Color(0xFF7CA0CF),
     onPrimary = Color(0xFF0C1622),
-    primaryContainer = Color(0xFF1F2A38),
+    primaryContainer = Color(0xFF243248),
     onPrimaryContainer = Color(0xFFD3E1F2),
-    outline = Color(0xFF232C36),
-    readBg = Color(0xFF1B222B),
-    readBg2 = Color(0xFF141A21),
+    outline = Color(0xFF2A3543),
+    readBg = Color(0xFF212B3A),
+    readBg2 = Color(0xFF1A2230),
     readText = Color(0xFFD9E2EC),
     readSub = Color(0xFF8B98A8),
     readLine = Color(0x337CA0CF)
