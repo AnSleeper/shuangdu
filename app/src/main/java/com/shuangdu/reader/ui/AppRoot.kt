@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.shuangdu.reader.AppContainer
 import com.shuangdu.reader.data.ImportResult
@@ -115,7 +116,7 @@ fun AppRoot(container: AppContainer, pendingOpen: MutableState<Uri?>) {
 
         SnackbarHost(
             hostState = snackbar,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.align(Alignment.BottomCenter)
         )
 
         UpdateHost(container = container, trigger = updateTick)

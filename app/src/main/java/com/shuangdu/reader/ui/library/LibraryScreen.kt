@@ -155,11 +155,6 @@ fun LibraryScreen(
                             onCheckUpdate()
                         }
                     )
-                    DropdownMenuItem(
-                        text = { Text("阅读设置") },
-                        leadingIcon = { Icon(Icons.Rounded.Settings, null) },
-                        onClick = { menuOpen = false }
-                    )
                 }
             }
         }
