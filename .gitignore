@@ -19,3 +19,4 @@ keystore.properties
 *-log.txt
 test-*.txt
 build-*.txt
+_ref/
