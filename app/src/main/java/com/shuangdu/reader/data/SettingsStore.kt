@@ -27,6 +27,8 @@ enum class ReadFont(val label: String, val family: String) {
 data class ReaderSettings(
     val fontSize: Float = 19f,
     val lineSpacing: Float = 1.6f,
+    val paragraphGap: Float = 0.45f,
+    val brightness: Float = 0f,
     val skin: Skin = Skin.INK_GREEN,
     val pageAnim: PageAnim = PageAnim.SLIDE,
     val marginH: Float = 22f,
@@ -55,6 +57,8 @@ class SettingsStore(context: Context) {
         return ReaderSettings(
             fontSize = sp.getFloat("fontSize", d.fontSize),
             lineSpacing = sp.getFloat("lineSpacing", d.lineSpacing),
+            paragraphGap = sp.getFloat("paragraphGap", d.paragraphGap),
+            brightness = sp.getFloat("brightness", d.brightness),
             skin = loadSkin(),
             pageAnim = runCatching { PageAnim.valueOf(sp.getString("pageAnim", d.pageAnim.name)!!) }
                 .getOrDefault(d.pageAnim),
@@ -88,6 +92,8 @@ class SettingsStore(context: Context) {
         sp.edit()
             .putFloat("fontSize", next.fontSize)
             .putFloat("lineSpacing", next.lineSpacing)
+            .putFloat("paragraphGap", next.paragraphGap)
+            .putFloat("brightness", next.brightness)
             .putString("skin", next.skin.name)
             .putString("pageAnim", next.pageAnim.name)
             .putFloat("marginH", next.marginH)

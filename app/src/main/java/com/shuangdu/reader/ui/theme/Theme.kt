@@ -15,6 +15,7 @@ import com.shuangdu.reader.data.Skin
 class SkinPalette(
     val skin: Skin,
     val appBg: Color,
+    val appBg2: Color,
     val surface: Color,
     val surfaceVariant: Color,
     val text: Color,
@@ -36,6 +37,7 @@ class SkinPalette(
 private val PAPER = SkinPalette(
     skin = Skin.PAPER,
     appBg = Color(0xFFF7F3EA),
+    appBg2 = Color(0xFFF2ECDF),
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFEFEAE0),
     text = Color(0xFF191A17),
@@ -54,7 +56,8 @@ private val PAPER = SkinPalette(
 
 private val INK_GREEN = SkinPalette(
     skin = Skin.INK_GREEN,
-    appBg = Color(0xFF151A14),
+    appBg = Color(0xFF1C231A),
+    appBg2 = Color(0xFF10140F),
     surface = Color(0xFF1C2219),
     surfaceVariant = Color(0xFF222A1E),
     text = Color(0xFFE6EADF),
@@ -64,8 +67,8 @@ private val INK_GREEN = SkinPalette(
     primaryContainer = Color(0xFF26321E),
     onPrimaryContainer = Color(0xFFD6E6C8),
     outline = Color(0xFF2B3327),
-    readBg = Color(0xFF1F251C),
-    readBg2 = Color(0xFF171C16),
+    readBg = Color(0xFF242C20),
+    readBg2 = Color(0xFF12170F),
     readText = Color(0xFFDFE5D3),
     readSub = Color(0xFF8C9681),
     readLine = Color(0x3386B06A)
@@ -74,6 +77,7 @@ private val INK_GREEN = SkinPalette(
 private val DUSK_PINK = SkinPalette(
     skin = Skin.DUSK_PINK,
     appBg = Color(0xFF2A1D21),
+    appBg2 = Color(0xFF1D1417),
     surface = Color(0xFF34242A),
     surfaceVariant = Color(0xFF3E2C33),
     text = Color(0xFFF1E1E5),
@@ -93,6 +97,7 @@ private val DUSK_PINK = SkinPalette(
 private val INK_BLUE = SkinPalette(
     skin = Skin.INK_BLUE,
     appBg = Color(0xFF1A2130),
+    appBg2 = Color(0xFF111722),
     surface = Color(0xFF222B3B),
     surfaceVariant = Color(0xFF2A3546),
     text = Color(0xFFDFE6EF),
@@ -112,6 +117,7 @@ private val INK_BLUE = SkinPalette(
 private val BLACK = SkinPalette(
     skin = Skin.BLACK,
     appBg = Color(0xFF000000),
+    appBg2 = Color(0xFF000000),
     surface = Color(0xFF0B0B0C),
     surfaceVariant = Color(0xFF161617),
     text = Color(0xFFEAEAEA),

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.MoreVert
@@ -148,7 +149,6 @@ fun LibraryScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
             .systemBarsPadding()
     ) {
         // 顶栏
@@ -165,6 +165,16 @@ fun LibraryScreen(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(onClick = {
+                    if (visible.isNotEmpty() && selected.size >= visible.size) {
+                        selected.clear()
+                    } else {
+                        selected.clear()
+                        selected.addAll(visible.map { it.id })
+                    }
+                }) {
+                    Icon(Icons.Rounded.DoneAll, "全选", tint = MaterialTheme.colorScheme.onBackground)
+                }
                 IconButton(onClick = {
                     pendingDelete = books.filter { it.id in selected }
                 }) {

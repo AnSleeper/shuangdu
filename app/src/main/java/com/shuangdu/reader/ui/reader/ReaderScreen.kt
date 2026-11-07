@@ -81,6 +81,7 @@ import com.shuangdu.reader.data.PageAnim
 import com.shuangdu.reader.data.ReadFont
 import com.shuangdu.reader.ui.theme.SkinPalette
 import com.shuangdu.reader.ui.theme.paletteOf
+import com.shuangdu.reader.util.findActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -123,7 +124,8 @@ fun ReaderScreen(
     val bottomPad = navBar + if (settings.showStatus) 24.dp else 10.dp
 
     val style: PageStyle? = remember(
-        textArea, settings.fontSize, settings.lineSpacing, settings.font, settings.indent, pal
+        textArea, settings.fontSize, settings.lineSpacing, settings.font, settings.indent,
+        settings.paragraphGap, pal
     ) {
         if (textArea.width <= 0) null else PageStyle(
             textSizePx = with(density) { settings.fontSize.sp.toPx() },
@@ -131,7 +133,8 @@ fun ReaderScreen(
             typeface = typefaceOf(settings.font),
             color = pal.readText.toArgb(),
             widthPx = textArea.width,
-            indent = settings.indent
+            indent = settings.indent,
+            paragraphGap = settings.paragraphGap
         )
     }
 
@@ -237,6 +240,28 @@ fun ReaderScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // 阅读亮度
+    val ctx = LocalContext.current
+    DisposableEffect(settings.brightness) {
+        val act = ctx.findActivity()
+        val old = act?.window?.attributes?.screenBrightness ?: -1f
+        if (act != null) {
+            val attrs = act.window.attributes
+            attrs.screenBrightness = if (settings.brightness <= 0.02f) {
+                android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            } else {
+                settings.brightness
+            }
+            act.window.attributes = attrs
+        }
+        onDispose {
+            val a = ctx.findActivity() ?: return@onDispose
+            val attrs = a.window.attributes
+            attrs.screenBrightness = old
+            a.window.attributes = attrs
+        }
+    }
+
     BackHandler {
         when {
             showChapters -> showChapters = false
@@ -266,7 +291,8 @@ fun ReaderScreen(
                     pageHeightPx = textArea.height,
                     hasNextChapter = engine.chapterIndex + 1 < chapters.size,
                     onTapCenter = { showUi = !showUi },
-                    onNextChapter = { nextChapter() }
+                    onNextChapter = { nextChapter() },
+                    onPageSettled = { offset -> anchor = offset }
                 )
             } else {
                 ReaderPager(
@@ -321,50 +347,64 @@ fun ReaderScreen(
             }
         }
 
+        // 工具栏：上栏从上滑下，下栏从下升起
         AnimatedVisibility(
             visible = showUi,
-            enter = fadeIn() + slideInVertically { -it / 4 },
-            exit = fadeOut() + slideOutVertically { -it / 4 }
+            enter = fadeIn(),
+            exit = fadeOut()
         ) {
-            Column(Modifier.fillMaxSize()) {
-                ReaderTopBar(
-                    pal = pal,
-                    title = book.title,
-                    chapter = engine.titleOf(engine.chapterIndex),
-                    onBack = {
-                        persistProgress()
-                        onBack()
-                    }
-                )
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .pointerInput(Unit) { detectTapGestures { showUi = false } }
-                )
-                ReaderBottomBar(
-                    pal = pal,
-                    chapterIndex = engine.chapterIndex,
-                    total = chapters.size,
-                    onChapters = { showChapters = true },
-                    onPrev = { goPrev() },
-                    onNext = { goNext() },
-                    onSettings = { showSettings = true },
-                    onTts = { onNotify("听书功能会在下一版接入") },
-                    onSeek = { jumpToChapter(it) }
-                )
-            }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) { detectTapGestures { showUi = false } }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showUi,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = slideInVertically { -it },
+            exit = slideOutVertically { -it }
+        ) {
+            ReaderTopBar(
+                pal = pal,
+                title = book.title,
+                chapter = engine.titleOf(engine.chapterIndex),
+                onBack = {
+                    persistProgress()
+                    onBack()
+                }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showUi,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically { it },
+            exit = slideOutVertically { it }
+        ) {
+            ReaderBottomBar(
+                pal = pal,
+                chapterIndex = engine.chapterIndex,
+                total = chapters.size,
+                onChapters = { showChapters = true },
+                onPrev = { goPrev() },
+                onNext = { goNext() },
+                onSettings = { showSettings = true },
+                onTts = { onNotify("听书功能会在下一版接入") },
+                onSeek = { jumpToChapter(it) }
+            )
         }
     }
 
-    if (showChapters) {
-        ChapterListSheet(
-            titles = engine.chapterTitles,
-            current = engine.chapterIndex,
-            onSelect = { jumpToChapter(it) },
-            onDismiss = { showChapters = false }
-        )
-    }
+    ChapterDrawer(
+        visible = showChapters,
+        bookTitle = book.title,
+        titles = engine.chapterTitles,
+        current = engine.chapterIndex,
+        onSelect = { jumpToChapter(it) },
+        onDismiss = { showChapters = false }
+    )
 
     if (showSettings) {
         ReaderSettingsSheet(
@@ -382,19 +422,26 @@ private fun ScrollReader(
     pageHeightPx: Int,
     hasNextChapter: Boolean,
     onTapCenter: () -> Unit,
-    onNextChapter: () -> Unit
+    onNextChapter: () -> Unit,
+    onPageSettled: (Int) -> Unit
 ) {
     val pages = engine.currentPageCount()
-    val listState = rememberLazyListState()
+    val initial = engine.page.coerceIn(0, (pages - 1).coerceAtLeast(0))
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initial)
     val density = LocalDensity.current
+    var lastChapter by remember { mutableIntStateOf(engine.chapterIndex) }
 
     LaunchedEffect(engine.chapterIndex) {
-        if (listState.firstVisibleItemIndex != 0) listState.scrollToItem(0)
+        if (engine.chapterIndex != lastChapter) {
+            lastChapter = engine.chapterIndex
+            listState.scrollToItem(0)
+        }
     }
     LaunchedEffect(listState, pages) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
             if (idx in 0 until pages && idx != engine.page) {
                 engine.page = idx
+                onPageSettled(engine.charOffsetNow())
             }
         }
     }
@@ -565,7 +612,7 @@ private fun ReaderBottomBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(pal.readBg)
+            .background(pal.readBg2)
             .padding(bottom = navBar + 8.dp)
     ) {
         Row(

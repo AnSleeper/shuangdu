@@ -106,8 +106,7 @@ class BlockedChapter private constructor(
         ): BlockedChapter? {
             if (!hasImageMarker(rawText)) return null
 
-            val text = if (style.indent) PaginatedChapter.normalizeParagraphs(rawText) else rawText.trim()
-            val blocks = splitBlocks(text)
+            val blocks = splitBlocks(rawText)
             val paint = PaginatedChapter.textPaint(style)
 
             var lineHeight = ((paint.fontMetrics.descent - paint.fontMetrics.ascent) * style.lineSpacingMult)
@@ -133,7 +132,7 @@ class BlockedChapter private constructor(
                 pageStartOffset = charCursor
             }
 
-            fun newTextLayout(t: String): StaticLayout = StaticLayout.Builder
+            fun newTextLayout(t: CharSequence): StaticLayout = StaticLayout.Builder
                 .obtain(t, 0, t.length, paint, width)
                 .setLineSpacing(0f, style.lineSpacingMult)
                 .setIncludePad(false)
@@ -144,7 +143,9 @@ class BlockedChapter private constructor(
 
             for (block in blocks) {
                 if (block is String) {
-                    val body = block
+                    val body: CharSequence = if (style.indent) {
+                        PaginatedChapter.buildParagraphs(block, style.paragraphGap)
+                    } else block.trim()
                     if (body.isBlank()) continue
                     val layout = newTextLayout(body)
                     if (!measured && layout.lineCount >= 2) {

@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.graphics.toArgb
@@ -86,6 +87,8 @@ private fun android.content.Context.findActivity(): android.app.Activity? {
 
 @Composable
 private fun AppRootContent(container: AppContainer, pendingOpen: MutableState<Uri?>) {
+    val settings by container.settings.state.collectAsStateWithLifecycle()
+    val pal = paletteOf(settings.skin)
     var route by remember { mutableStateOf<Route>(Route.Library) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -141,7 +144,7 @@ private fun AppRootContent(container: AppContainer, pendingOpen: MutableState<Ur
     Box(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Brush.verticalGradient(listOf(pal.appBg, pal.appBg2)))
     ) {
         AnimatedContent(
             targetState = route,

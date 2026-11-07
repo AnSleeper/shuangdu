@@ -2,18 +2,16 @@ package com.shuangdu.reader.ui.update
 
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,8 +31,11 @@ import com.shuangdu.reader.BuildConfig
 import com.shuangdu.reader.update.UpdateInfo
 import kotlinx.coroutines.launch
 
-private const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
-
+/**
+ * 更新检查：
+ * - 每次启动只自动检查一次，之后不再打扰（手动点除外）
+ * - 已经最新 / 被限流时都给明确提示，不笼统报「失败」
+ */
 @Composable
 fun UpdateHost(container: AppContainer, trigger: Int) {
     val context = LocalContext.current
@@ -47,44 +48,67 @@ fun UpdateHost(container: AppContainer, trigger: Int) {
     var downloading by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    var autoChecked by remember { mutableStateOf(false) }
 
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
 
-    fun check(silent: Boolean) {
-        if (checking || downloading) return
+    fun handleSuccess(remote: UpdateInfo?, manual: Boolean) {
+        if (remote == null) {
+            if (manual) toast("已是最新版本 ${BuildConfig.VERSION_NAME}")
+            return
+        }
+        prefs.edit().putString("latest_version", remote.versionName).apply()
+        if (container.updater.isNewer(remote.versionName)) {
+            info = remote
+        } else if (manual) {
+            toast("已是最新版本 ${BuildConfig.VERSION_NAME}")
+        }
+    }
+
+    fun handleFailure(message: String?, manual: Boolean) {
+        if (!manual) return
+        val cached = prefs.getString("latest_version", null)
+        when {
+            cached != null && !container.updater.isNewer(cached) ->
+                toast("已是最新版本 ${BuildConfig.VERSION_NAME}")
+            cached != null ->
+                toast("网络暂时不可用，上次查到的最新版是 $cached")
+            else ->
+                toast("检查更新失败：${message ?: "网络异常"}")
+        }
+    }
+
+    fun check(manual: Boolean) {
+        if (checking || downloading) {
+            if (manual) toast("正在检查，请稍候")
+            return
+        }
         scope.launch {
             checking = true
-            errorText = null
-            val result = container.updater.check()
+            val r = container.updater.check()
             checking = false
-            prefs.edit().putLong("last_check", System.currentTimeMillis()).apply()
-            result.onSuccess { remote ->
-                if (remote != null && container.updater.isNewer(remote.versionName)) {
-                    info = remote
-                } else if (!silent) {
-                    toast("已经是最新版 ${BuildConfig.VERSION_NAME}")
-                }
-            }.onFailure {
-                if (!silent) toast("检查更新失败：${it.message ?: "网络异常"}")
-            }
+            r.onSuccess { handleSuccess(it, manual) }
+                .onFailure { handleFailure(it.message, manual) }
         }
     }
 
+    // 启动后只检查一次
     LaunchedEffect(Unit) {
-        val last = prefs.getLong("last_check", 0L)
-        if (settings.autoCheckUpdate && System.currentTimeMillis() - last > CHECK_INTERVAL_MS) {
-            check(silent = true)
+        if (settings.autoCheckUpdate && !autoChecked) {
+            autoChecked = true
+            check(manual = false)
         }
     }
 
+    // 手动触发
     LaunchedEffect(trigger) {
-        if (trigger > 0) check(silent = false)
+        if (trigger > 0) check(manual = true)
     }
 
     info?.let { update ->
         AlertDialog(
             onDismissRequest = { if (!downloading) info = null },
-            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("发现新版本 ${update.versionName}") },
             text = {
                 Column {
@@ -93,7 +117,7 @@ fun UpdateHost(container: AppContainer, trigger: Int) {
                             "当前版本 ${BuildConfig.VERSION_NAME}  ·  " +
                                 if (update.apkSize > 0) "${update.apkSize / 1024 / 1024} MB" else "APK",
                             fontSize = 12.sp,
-                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(10.dp))
                         Text(
@@ -113,7 +137,7 @@ fun UpdateHost(container: AppContainer, trigger: Int) {
                     }
                     errorText?.let {
                         Spacer(Modifier.height(10.dp))
-                        Text(it, fontSize = 12.sp, color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+                        Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
@@ -143,9 +167,7 @@ fun UpdateHost(container: AppContainer, trigger: Int) {
                 ) { Text(if (downloading) "下载中…" else "立即更新") }
             },
             dismissButton = {
-                Row(horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { info = null }, enabled = !downloading) { Text("以后再说") }
-                }
+                TextButton(onClick = { info = null }, enabled = !downloading) { Text("以后再说") }
             }
         )
     }
