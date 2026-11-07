@@ -29,6 +29,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -78,7 +79,7 @@ fun TtsPanel(
     var showReconvert by remember { mutableStateOf(false) }
     var playingChapter by remember { mutableIntStateOf(currentChapter) }
 
-    val isThisBook = playerState.bookId == book.id
+    val isThisBook = playerState.bookId == book.id && playerState.active
     val isPlaying = isThisBook && playerState.playing
 
     fun playChapter(ch: Int, from: Int) {
@@ -96,21 +97,7 @@ fun TtsPanel(
         container.ttsPlayer.setSpeed(tts.speed)
     }
 
-    // 自动接下一章
-    DisposableEffect(book.id) {
-        val player = container.ttsPlayer
-        player.onQueueEnd = {
-            val next = playingChapter + 1
-            val segs = index.segmentsOf(next)
-            if (next < chapterTitles.size && segs.isNotEmpty() && segs.all { it.done }) {
-                playingChapter = next
-                player.play(book.id, next, segs, 0, dir)
-            }
-        }
-        onDispose {
-            player.onQueueEnd = null
-        }
-    }
+    // 自动接下一章已移到 TtsPlayer（挂 nextChapterProvider），不依赖面板是否打开
 
     // 定时停止由播放器自己管：只在播放时走，暂停就冻结
     val timerMinutes = playerState.timerMinutes
@@ -223,6 +210,7 @@ fun TtsPanel(
                     )
                 }
                 TextButton(onClick = { playChapter(currentChapter, startSegment) }) { Text("从本页听") }
+                TextButton(onClick = { container.ttsPlayer.stop() }) { Text("退出听书") }
             }
 
             // 转换进度
@@ -245,7 +233,7 @@ fun TtsPanel(
                         )
                         if (p.running) {
                             TextButton(onClick = { container.ttsConverter.pause(book.id) }) { Text("暂停转换") }
-                        } else {
+                        } else if (!p.finished) {
                             TextButton(onClick = {
                                 container.ttsConverter.convert(book, null)
                             }) { Text("继续转换") }
@@ -262,13 +250,7 @@ fun TtsPanel(
                 ActionChip("转整本") {
                     container.ttsConverter.convert(book, null)
                 }
-                ActionChip(
-                    when {
-                        timerRemaining > 0 -> "剩 ${formatCountdown(timerRemaining)}"
-                        timerMinutes > 0 -> "定时 ${timerMinutes}分"
-                        else -> "定时 关"
-                    }
-                ) {
+                ActionChip(if (timerMinutes > 0) "定时 ${timerMinutes}分" else "定时 关") {
                     val next = when (timerMinutes) {
                         0 -> 15
                         15 -> 30
@@ -276,6 +258,21 @@ fun TtsPanel(
                         else -> 0
                     }
                     container.ttsPlayer.setTimerMinutes(next)
+                }
+                if (timerRemaining > 0) {
+                    Box(
+                        Modifier
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            "剩 ${formatCountdown(timerRemaining)}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
@@ -305,6 +302,44 @@ fun TtsPanel(
                     modifier = Modifier.width(38.dp)
                 )
             }
+
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "悬浮窗",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(48.dp)
+                )
+                Switch(checked = tts.showPill, onCheckedChange = { v ->
+                    container.ttsSettings.update { it.copy(showPill = v) }
+                })
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "透明度",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Slider(
+                    value = tts.pillOpacity,
+                    onValueChange = { v ->
+                        container.ttsSettings.update { it.copy(pillOpacity = v) }
+                    },
+                    valueRange = 0.3f..1f,
+                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                )
+                Text(
+                    "${(tts.pillOpacity * 100).toInt()}%",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(38.dp)
+                )
+            }
+            Text(
+                "悬浮窗可以按住拖动，松手自动吸附到屏幕左右边缘",
+                fontSize = 10.5.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Spacer(Modifier.height(14.dp))
             Text(

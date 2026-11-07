@@ -97,11 +97,11 @@ class TtsIndex(private val dir: File) {
     fun segmentsOf(chapter: Int): List<TtsSegment> = chapters[chapter].orEmpty()
 
     /** 没建过就按正文切分建一份 */
-    fun ensureChapter(chapter: Int, text: String): List<TtsSegment> {
+    fun ensureChapter(chapter: Int, text: String, title: String = ""): List<TtsSegment> {
         load()
         val existing = chapters[chapter]
         if (existing != null && existing.isNotEmpty()) return existing
-        val segs = Segmenter.split(chapter, text)
+        val segs = Segmenter.split(chapter, text, title)
         chapters[chapter] = segs.toMutableList()
         return chapters[chapter]!!
     }
@@ -152,9 +152,15 @@ object Segmenter {
 
     private val SENTENCE_END = charArrayOf('。', '！', '？', '…', '」', '』', '”', '!', '?')
 
-    fun split(chapter: Int, text: String): List<TtsSegment> {
+    fun split(chapter: Int, text: String, title: String = ""): List<TtsSegment> {
         val out = ArrayList<TtsSegment>()
         var index = 0
+        val t = title.trim()
+        // 章节标题也读出来，作为第一段
+        if (t.isNotEmpty() && t.any { it.isLetterOrDigit() }) {
+            out.add(TtsSegment(index = index, text = t, file = "${chapter}_${index}.mp3"))
+            index++
+        }
         for (raw in text.split('\n')) {
             val para = raw.trim().replace('\u3000', ' ').trim()
             if (para.isEmpty()) continue

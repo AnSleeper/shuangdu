@@ -15,10 +15,12 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBackIosNew
 import androidx.compose.material.icons.rounded.CenterFocusStrong
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
@@ -57,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -73,14 +78,18 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuangdu.reader.AppContainer
 import com.shuangdu.reader.data.PageAnim
@@ -124,8 +133,10 @@ fun ReaderScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showTts by remember { mutableStateOf(false) }
     var textArea by remember { mutableStateOf(IntSize.Zero) }
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
     val ttsIndex = remember(book.id) { container.ttsConverter.indexOf(book) }
     val playerState by container.ttsPlayer.state.collectAsStateWithLifecycle()
+    val ttsCfg by container.ttsSettings.state.collectAsStateWithLifecycle()
 
     val statusBar = with(density) { WindowInsets.statusBars.asPaddingValues().calculateTopPadding() }
     val navBar = with(density) { WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() }
@@ -330,7 +341,12 @@ fun ReaderScreen(
         Brush.verticalGradient(listOf(pal.readBg, pal.readBg2))
     }
 
-    Box(Modifier.fillMaxSize().background(bgBrush)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(bgBrush)
+            .onSizeChanged { rootSize = it }
+    ) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -448,16 +464,51 @@ fun ReaderScreen(
             )
         }
 
-        // 听书悬浮条：播放时挂在右侧，可暂停、看倒计时、跳到朗读处，点条身打开听书面板
-        if (playerState.bookId == book.id && (playerState.playing || playerState.timerRemainingMs > 0)) {
+        // 听书悬浮球：听书期间常驻（暂停也在），可拖动、吸附左右边缘；点球身打开听书面板
+        if (playerState.active && playerState.bookId == book.id && ttsCfg.showPill &&
+            rootSize.width > 200 && rootSize.height > 200
+        ) {
+            val screenW = rootSize.width.toFloat()
+            val screenH = rootSize.height.toFloat()
+            val pillH = with(density) { 54.dp.toPx() }
+            val margin = with(density) { 8.dp.toPx() }
+            val yTop = with(density) { 150.dp.toPx() }
+            val yBottom = screenH - pillH - with(density) { 130.dp.toPx() }
+            var dragX by remember { mutableFloatStateOf(0f) }
+            var dragY by remember { mutableFloatStateOf(0f) }
+            var measuredW by remember { mutableFloatStateOf(0f) }
+            val pillW = if (measuredW > 0f) measuredW else with(density) { 158.dp.toPx() }
+            val baseX = if (ttsCfg.pillOnLeft) margin else screenW - pillW - margin
+            val baseY = yTop + ttsCfg.pillYFraction * (yBottom - yTop)
+            val px = (baseX + dragX).coerceIn(margin, (screenW - pillW - margin).coerceAtLeast(margin))
+            val py = (baseY + dragY).coerceIn(yTop, yBottom.coerceAtLeast(yTop))
+
             Row(
                 Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 4.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.Black.copy(alpha = 0.55f))
+                    .offset { IntOffset(px.roundToInt(), py.roundToInt()) }
+                    .onSizeChanged { measuredW = it.width.toFloat() }
+                    .alpha(ttsCfg.pillOpacity)
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragEnd = {
+                                val onLeft = px + pillW / 2 < screenW / 2
+                                val yFrac = ((py - yTop) / (yBottom - yTop).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                                container.ttsSettings.update {
+                                    it.copy(pillOnLeft = onLeft, pillYFraction = yFrac)
+                                }
+                                dragX = 0f
+                                dragY = 0f
+                            }
+                        ) { change, amount ->
+                            change.consume()
+                            dragX += amount.x
+                            dragY += amount.y
+                        }
+                    }
+                    .clip(RoundedCornerShape(27.dp))
+                    .background(Color.Black.copy(alpha = 0.72f))
                     .clickable { showTts = true }
-                    .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                    .padding(start = 12.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -465,31 +516,54 @@ fun ReaderScreen(
                     if (playerState.playing) "暂停" else "继续",
                     tint = Color.White,
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(26.dp)
                         .clickable {
                             if (playerState.playing) container.ttsPlayer.pause()
                             else container.ttsPlayer.resume()
                         }
                 )
-                if (playerState.timerRemainingMs > 0) {
-                    Spacer(Modifier.width(5.dp))
+                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
+                Column(
+                    Modifier.weight(1f).clickable { showTts = true },
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
-                        "%d:%02d".format(
-                            playerState.timerRemainingMs / 60000,
-                            (playerState.timerRemainingMs / 1000) % 60
-                        ),
+                        if (playerState.playing) "播放中" else "已暂停",
                         fontSize = 10.sp,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                    Text(
+                        if (playerState.timerRemainingMs > 0) {
+                            "剩 %d:%02d".format(
+                                playerState.timerRemainingMs / 60000,
+                                (playerState.timerRemainingMs / 1000) % 60
+                            )
+                        } else {
+                            "第 ${playerState.chapter + 1} 章"
+                        },
+                        fontSize = 9.sp,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1
                     )
                 }
-                Spacer(Modifier.width(5.dp))
                 Icon(
                     Icons.Rounded.CenterFocusStrong,
                     "跳到正在读的段落",
                     tint = Color.White,
                     modifier = Modifier
-                        .size(18.dp)
+                        .size(20.dp)
                         .clickable { snapTick++ }
+                )
+                Spacer(Modifier.width(7.dp))
+                Icon(
+                    Icons.Rounded.Close,
+                    "退出听书",
+                    tint = Color.White.copy(alpha = 0.85f),
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable { container.ttsPlayer.stop() }
                 )
             }
         }

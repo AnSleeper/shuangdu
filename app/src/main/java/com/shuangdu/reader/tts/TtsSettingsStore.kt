@@ -11,7 +11,11 @@ data class TtsSettings(
     val globalVoiceId: String = "",
     val globalVoiceName: String = "",
     val concurrency: Int = 5,
-    val speed: Float = 1.0f
+    val speed: Float = 1.0f,
+    val showPill: Boolean = true,
+    val pillOpacity: Float = 0.85f,
+    val pillOnLeft: Boolean = false,
+    val pillYFraction: Float = 0.45f
 )
 
 class TtsSettingsStore(context: Context) {
@@ -58,7 +62,11 @@ class TtsSettingsStore(context: Context) {
             globalVoiceId = sp.getString("globalVoiceId", d.globalVoiceId).orEmpty(),
             globalVoiceName = sp.getString("globalVoiceName", d.globalVoiceName).orEmpty(),
             concurrency = sp.getInt("concurrency", d.concurrency).coerceIn(1, 7),
-            speed = sp.getFloat("speed", d.speed).coerceIn(0.6f, 1.6f)
+            speed = sp.getFloat("speed", d.speed).coerceIn(0.6f, 1.6f),
+            showPill = sp.getBoolean("showPill", d.showPill),
+            pillOpacity = sp.getFloat("pillOpacity", d.pillOpacity).coerceIn(0.3f, 1f),
+            pillOnLeft = sp.getBoolean("pillOnLeft", d.pillOnLeft),
+            pillYFraction = sp.getFloat("pillYFraction", d.pillYFraction).coerceIn(0f, 1f)
         )
     }
 
@@ -71,6 +79,10 @@ class TtsSettingsStore(context: Context) {
             .putString("globalVoiceName", next.globalVoiceName)
             .putInt("concurrency", next.concurrency.coerceIn(1, 7))
             .putFloat("speed", next.speed)
+            .putBoolean("showPill", next.showPill)
+            .putFloat("pillOpacity", next.pillOpacity)
+            .putBoolean("pillOnLeft", next.pillOnLeft)
+            .putFloat("pillYFraction", next.pillYFraction)
             .apply()
     }
 }

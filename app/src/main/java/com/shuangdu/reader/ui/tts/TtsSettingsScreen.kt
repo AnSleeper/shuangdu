@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -395,6 +396,9 @@ fun VoicePickerSheet(
         favorites.map { VoiceItem(it.id, it.title, "", "", "", emptyList(), emptyList(), 0) }
     } else voices
 
+    // 点了音色先确认，防误触
+    var pendingPick by remember { mutableStateOf<VoiceItem?>(null) }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -461,11 +465,11 @@ fun VoicePickerSheet(
                 else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp)) {
                     items(displayVoices, key = { it.id }) { v ->
                         val selected = v.id == currentId
-                        val fav = container.ttsSettings.isFavorite(v.id)
+                        val fav = favorites.any { it.id == v.id }
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable { onPick(v) }
+                                .clickable { pendingPick = v }
                                 .padding(start = 20.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -529,6 +533,24 @@ fun VoicePickerSheet(
                 }
             }
         }
+    }
+
+    pendingPick?.let { v ->
+        AlertDialog(
+            onDismissRequest = { pendingPick = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("使用这个音色？") },
+            text = { Text("「${v.title}」${v.author.takeIf(String::isNotBlank)?.let { "（$it）" } ?: ""}") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingPick = null
+                    onPick(v)
+                }) { Text("使用") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingPick = null }) { Text("取消") }
+            }
+        )
     }
 }
 

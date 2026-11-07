@@ -21,6 +21,7 @@ class TtsPlayer(context: Context) {
 
     data class State(
         val playing: Boolean = false,
+        val active: Boolean = false,
         val bookId: String = "",
         val chapter: Int = -1,
         val segment: Int = -1,
@@ -42,9 +43,13 @@ class TtsPlayer(context: Context) {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    /** 一段播完、整个列表播完时的回调（用于接下一章） */
+    /** 一段播完、整章播完时的回调（用于接下一章） */
     var onSegmentEnd: ((chapter: Int, segment: Int) -> Unit)? = null
     var onQueueEnd: (() -> Unit)? = null
+
+    /** 章节播完自动接下一章：返回该章已转好的段落，null 表示没有/没转完 */
+    var nextChapterProvider: ((bookId: String, chapter: Int) -> List<TtsSegment>? )? = null
+    var dirProvider: ((bookId: String) -> File)? = null
 
     init {
         player.addListener(object : Player.Listener {
@@ -66,9 +71,22 @@ class TtsPlayer(context: Context) {
                 if (playbackState == Player.STATE_ENDED) {
                     _state.value = _state.value.copy(playing = false)
                     onQueueEnd?.invoke()
+                    tryAutoAdvance()
                 }
             }
         })
+    }
+
+    /** 一章播完自动接下一章（下一章必须已转好），逻辑挂在播放器上，跟界面无关 */
+    private fun tryAutoAdvance() {
+        val s = _state.value
+        if (s.bookId.isEmpty() || s.chapter < 0) return
+        val next = s.chapter + 1
+        val segs = nextChapterProvider?.invoke(s.bookId, next) ?: return
+        if (segs.isEmpty() || !segs.all { it.done }) return
+        val dir = dirProvider?.invoke(s.bookId) ?: return
+        // 从监听器里改播放器结构不安全，抛到主线程协程里做
+        tickerScope.launch { play(s.bookId, next, segs, 0, dir) }
     }
 
     val currentChapter: Int get() = _state.value.chapter
@@ -96,19 +114,23 @@ class TtsPlayer(context: Context) {
         }
         _state.value = State(
             playing = false,
+            active = true,
             bookId = bookId,
             chapter = chapter,
             segment = playable.first().index,
-            segments = playable
+            segments = playable,
+            timerMinutes = _state.value.timerMinutes,
+            timerRemainingMs = timerRemainingMs
         )
         player.prepare()
         player.play()
+        startTimerTicker()
     }
 
     fun pause() {
         player.pause()
         timerJob?.cancel() // 倒计时跟播放一起停
-        publishTimer(_state.value.timerMinutes)
+        publishTimer()
     }
 
     fun resume() {
@@ -142,33 +164,34 @@ class TtsPlayer(context: Context) {
         timerJob?.cancel()
         if (min <= 0) {
             timerRemainingMs = 0
-            publishTimer(0)
+            _state.value = _state.value.copy(timerMinutes = 0, timerRemainingMs = 0)
             return
         }
         timerRemainingMs = min * 60_000L
+        _state.value = _state.value.copy(timerMinutes = min, timerRemainingMs = timerRemainingMs)
         startTimerTicker()
     }
 
     private fun startTimerTicker() {
         timerJob?.cancel()
-        publishTimer(_state.value.timerMinutes)
+        publishTimer()
         if (timerRemainingMs <= 0) return
         if (!_state.value.playing) return
         timerJob = tickerScope.launch {
             while (timerRemainingMs > 0 && _state.value.playing) {
                 delay(1000)
                 timerRemainingMs = (timerRemainingMs - 1000).coerceAtLeast(0)
-                publishTimer(_state.value.timerMinutes)
+                publishTimer()
             }
             if (timerRemainingMs <= 0) {
                 player.pause()
-                publishTimer(0)
+                publishTimer()
             }
         }
     }
 
-    private fun publishTimer(minutes: Int) {
-        _state.value = _state.value.copy(timerMinutes = minutes, timerRemainingMs = timerRemainingMs)
+    private fun publishTimer() {
+        _state.value = _state.value.copy(timerRemainingMs = timerRemainingMs)
     }
 
     fun release() {

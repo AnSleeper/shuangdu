@@ -106,6 +106,7 @@ class TtsConverter(
         val tts = settings.current
         val totalChapters = repo.chapterCount(book)
         val targets = (chapters ?: (0 until totalChapters).toList()).filter { it in 0 until totalChapters }
+        val chapterTitleList = runCatching { repo.loadChapters(book) }.getOrDefault(emptyList())
 
         jobs[book.id] = scope.launch {
             val index = indexOf(book)
@@ -115,7 +116,8 @@ class TtsConverter(
             for (ch in targets) {
                 val text = repo.readChapter(book, ch)
                 if (text.isBlank()) continue
-                val segs = index.ensureChapter(ch, text)
+                val chTitle = chapterTitleList.getOrNull(ch)?.title.orEmpty()
+                val segs = index.ensureChapter(ch, text, chTitle)
                 segs.filter { !it.done || !index.audioFile(it.file).exists() }.forEach { seg ->
                     pending.add(ch to seg)
                 }

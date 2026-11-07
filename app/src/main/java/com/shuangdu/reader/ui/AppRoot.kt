@@ -136,6 +136,26 @@ private fun AppRootContent(container: AppContainer, pendingOpen: MutableState<Ur
         }
     }
 
+    // 听书播放器：一章播完自动接下一章（下一章已转好的前提下），挂在播放器上跟界面无关
+    LaunchedEffect(Unit) {
+        val player = container.ttsPlayer
+        player.dirProvider = { bookId ->
+            java.io.File(container.repository.bookDir(bookId), "tts")
+        }
+        player.nextChapterProvider = { bookId, chapter ->
+            val book = container.library.books.value.firstOrNull { it.id == bookId }
+            val index = book?.let { container.ttsConverter.indexOf(it) }
+            val segs = if (book != null && index != null &&
+                chapter in 0 until container.repository.chapterCount(book)
+            ) {
+                index.segmentsOf(chapter)
+            } else {
+                emptyList()
+            }
+            if (segs.isNotEmpty() && segs.all { it.done }) segs else null
+        }
+    }
+
     // 外部用别的 app 打开 txt/epub
     LaunchedEffect(pendingOpen.value) {
         val uri = pendingOpen.value ?: return@LaunchedEffect
