@@ -33,50 +33,86 @@ class UpdateChecker(private val context: Context) {
     private val repo = BuildConfig.GITHUB_REPO
 
     suspend fun check(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
-        runCatching {
-            val url = URL("https://api.github.com/repos/$owner/$repo/releases/latest")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 12000
-                readTimeout = 12000
-                requestMethod = "GET"
-                setRequestProperty("Accept", "application/vnd.github+json")
-                setRequestProperty("User-Agent", "ShuangDu-Reader/${BuildConfig.VERSION_NAME}")
-            }
-            try {
-                val code = conn.responseCode
-                if (code == 404) throw IllegalStateException("仓库不存在或尚未发布版本")
-                if (code == 403) throw IllegalStateException("请求太频繁，稍后再试")
-                if (code !in 200..299) throw IllegalStateException("检查失败（HTTP $code）")
-                val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-                val json = JSONObject(body)
-                val tag = json.optString("tag_name").ifBlank { json.optString("name") }
-                val version = normalizeVersion(tag)
-                val assets = json.optJSONArray("assets")
-                var apkUrl = ""
-                var apkSize = 0L
-                if (assets != null) {
-                    for (i in 0 until assets.length()) {
-                        val a = assets.getJSONObject(i)
-                        val name = a.optString("name")
-                        if (name.endsWith(".apk", true)) {
-                            apkUrl = a.optString("browser_download_url")
-                            apkSize = a.optLong("size")
-                            break
-                        }
+        val viaApi = runCatching { checkViaApi() }
+        if (viaApi.isSuccess) return@withContext viaApi
+        // API 被限流/不可用时，退回 Release 里的 version.json（不占 API 配额）
+        val viaManifest = runCatching { checkViaManifest() }
+        if (viaManifest.isSuccess) viaManifest else viaApi
+    }
+
+    private fun checkViaApi(): UpdateInfo? {
+        val url = URL("https://api.github.com/repos/$owner/$repo/releases/latest")
+        val conn = (url.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 12000
+            readTimeout = 12000
+            requestMethod = "GET"
+            setRequestProperty("Accept", "application/vnd.github+json")
+            setRequestProperty("User-Agent", "ShuangDu-Reader/${BuildConfig.VERSION_NAME}")
+        }
+        try {
+            val code = conn.responseCode
+            if (code == 404) throw IllegalStateException("仓库不存在或尚未发布版本")
+            if (code == 403 || code == 429) throw IllegalStateException("请求太频繁")
+            if (code !in 200..299) throw IllegalStateException("检查失败（HTTP $code）")
+            val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            val json = JSONObject(body)
+            val tag = json.optString("tag_name").ifBlank { json.optString("name") }
+            val version = normalizeVersion(tag)
+            val assets = json.optJSONArray("assets")
+            var apkUrl = ""
+            var apkSize = 0L
+            if (assets != null) {
+                for (i in 0 until assets.length()) {
+                    val a = assets.getJSONObject(i)
+                    val name = a.optString("name")
+                    if (name.endsWith(".apk", true)) {
+                        apkUrl = a.optString("browser_download_url")
+                        apkSize = a.optLong("size")
+                        break
                     }
                 }
-                if (apkUrl.isBlank()) return@runCatching null
-                UpdateInfo(
-                    versionName = version,
-                    changelog = json.optString("body").trim(),
-                    apkUrl = apkUrl,
-                    apkSize = apkSize,
-                    publishedAt = json.optString("published_at"),
-                    htmlUrl = json.optString("html_url")
-                )
-            } finally {
-                conn.disconnect()
             }
+            if (apkUrl.isBlank()) return null
+            return UpdateInfo(
+                versionName = version,
+                changelog = json.optString("body").trim(),
+                apkUrl = apkUrl,
+                apkSize = apkSize,
+                publishedAt = json.optString("published_at"),
+                htmlUrl = json.optString("html_url")
+            )
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** releases/latest/download/version.json —— 走 CDN，不受 API 每小时 60 次限制 */
+    private fun checkViaManifest(): UpdateInfo? {
+        val manifestUrl = URL("https://github.com/$owner/$repo/releases/latest/download/version.json")
+        val conn = (manifestUrl.openConnection() as HttpURLConnection).apply {
+            connectTimeout = 12000
+            readTimeout = 12000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "ShuangDu-Reader/${BuildConfig.VERSION_NAME}")
+        }
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) throw IllegalStateException("检查失败（HTTP $code）")
+            val text = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+            val json = JSONObject(text)
+            val version = normalizeVersion(json.optString("version"))
+            val apkName = json.optString("apk")
+            if (version.isBlank() || apkName.isBlank()) return null
+            return UpdateInfo(
+                versionName = version,
+                changelog = json.optString("notes").trim(),
+                apkUrl = "https://github.com/$owner/$repo/releases/latest/download/$apkName",
+                apkSize = json.optLong("size"),
+                publishedAt = json.optString("date"),
+                htmlUrl = "https://github.com/$owner/$repo/releases/latest"
+            )
+        } finally {
+            conn.disconnect()
         }
     }
 
