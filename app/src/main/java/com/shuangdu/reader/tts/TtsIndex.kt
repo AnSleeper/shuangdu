@@ -126,6 +126,17 @@ class TtsIndex(private val dir: File) {
 
     fun completedChapters(): List<Int> = chapters.filter { (_, s) -> s.isNotEmpty() && s.all { it.done } }.keys.toList()
 
+    /** 换音色后重转：删掉所有音频文件，段落全部标记为未转 */
+    fun resetAudio() {
+        runCatching {
+            dir.listFiles()?.forEach { if (it.name != "index.json" && it.name != "index.json.tmp") it.delete() }
+        }
+        chapters.forEach { (_, list) ->
+            for (i in list.indices) list[i] = list[i].copy(done = false)
+        }
+        save()
+    }
+
     fun deleteAll() {
         runCatching { dir.deleteRecursively() }
         chapters.clear()

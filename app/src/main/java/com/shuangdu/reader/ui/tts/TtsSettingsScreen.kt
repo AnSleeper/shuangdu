@@ -28,6 +28,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -368,6 +371,8 @@ fun VoicePickerSheet(
     var error by remember { mutableStateOf<String?>(null) }
     var keyword by remember { mutableStateOf("") }
     var zhOnly by remember { mutableStateOf(true) }
+    var favOnly by remember { mutableStateOf(false) }
+    val favorites by container.ttsSettings.favorites.collectAsStateWithLifecycle()
 
     val player = remember { PreviewPlayer() }
     DisposableEffect(Unit) { onDispose { player.release() } }
@@ -384,6 +389,11 @@ fun VoicePickerSheet(
     }
 
     LaunchedEffect(Unit) { load("", true) }
+
+    // 收藏模式直接展示本地收藏，不走网络
+    val displayVoices: List<VoiceItem> = if (favOnly) {
+        favorites.map { VoiceItem(it.id, it.title, "", "", "", emptyList(), emptyList(), 0) }
+    } else voices
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -411,11 +421,18 @@ fun VoicePickerSheet(
                 Modifier.padding(start = 20.dp, top = 8.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                LangChip("只看中文", zhOnly) {
+                LangChip("收藏 ${favorites.size}", favOnly) {
+                    favOnly = true
+                    loading = false
+                    error = null
+                }
+                LangChip("只看中文", !favOnly && zhOnly) {
+                    favOnly = false
                     zhOnly = true
                     load(keyword, true)
                 }
-                LangChip("全部语言", !zhOnly) {
+                LangChip("全部语言", !favOnly && !zhOnly) {
+                    favOnly = false
                     zhOnly = false
                     load(keyword, false)
                 }
@@ -434,13 +451,17 @@ fun VoicePickerSheet(
                     }
                 }
 
-                voices.isEmpty() -> Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
-                    Text("没有找到音色", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                displayVoices.isEmpty() -> Box(Modifier.fillMaxWidth().height(220.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (favOnly) "还没有收藏音色，在列表里点 ★ 收藏" else "没有找到音色",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp)) {
-                    items(voices, key = { it.id }) { v ->
+                    items(displayVoices, key = { it.id }) { v ->
                         val selected = v.id == currentId
+                        val fav = container.ttsSettings.isFavorite(v.id)
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -483,6 +504,17 @@ fun VoicePickerSheet(
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
+                            }
+                            IconButton(
+                                onClick = { container.ttsSettings.toggleFavorite(v.id, v.title) },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    if (fav) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                                    "收藏",
+                                    tint = if (fav) Color(0xFFF5C518) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(19.dp)
+                                )
                             }
                             if (selected) {
                                 Icon(

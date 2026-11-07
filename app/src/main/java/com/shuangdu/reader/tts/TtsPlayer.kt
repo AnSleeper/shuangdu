@@ -6,9 +6,11 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -22,7 +24,9 @@ class TtsPlayer(context: Context) {
         val bookId: String = "",
         val chapter: Int = -1,
         val segment: Int = -1,
-        val segments: List<TtsSegment> = emptyList()
+        val segments: List<TtsSegment> = emptyList(),
+        val timerMinutes: Int = 0,
+        val timerRemainingMs: Long = 0
     )
 
     private val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
@@ -103,20 +107,68 @@ class TtsPlayer(context: Context) {
 
     fun pause() {
         player.pause()
+        timerJob?.cancel() // 倒计时跟播放一起停
+        publishTimer(_state.value.timerMinutes)
     }
 
     fun resume() {
-        if (player.mediaItemCount > 0) player.play()
+        if (player.mediaItemCount > 0) {
+            player.play()
+            startTimerTicker()
+        }
     }
 
     fun stop() {
         player.stop()
         player.clearMediaItems()
+        timerJob?.cancel()
+        timerRemainingMs = 0
         _state.value = State()
     }
 
     fun setSpeed(speed: Float) {
         player.setPlaybackSpeed(speed.coerceIn(0.5f, 2.0f))
+    }
+
+    // ---- 定时停止：倒计时只在播放时走，暂停就冻结 ----
+
+    private val tickerScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main
+    )
+    private var timerJob: kotlinx.coroutines.Job? = null
+    private var timerRemainingMs = 0L
+
+    fun setTimerMinutes(min: Int) {
+        timerJob?.cancel()
+        if (min <= 0) {
+            timerRemainingMs = 0
+            publishTimer(0)
+            return
+        }
+        timerRemainingMs = min * 60_000L
+        startTimerTicker()
+    }
+
+    private fun startTimerTicker() {
+        timerJob?.cancel()
+        publishTimer(_state.value.timerMinutes)
+        if (timerRemainingMs <= 0) return
+        if (!_state.value.playing) return
+        timerJob = tickerScope.launch {
+            while (timerRemainingMs > 0 && _state.value.playing) {
+                delay(1000)
+                timerRemainingMs = (timerRemainingMs - 1000).coerceAtLeast(0)
+                publishTimer(_state.value.timerMinutes)
+            }
+            if (timerRemainingMs <= 0) {
+                player.pause()
+                publishTimer(0)
+            }
+        }
+    }
+
+    private fun publishTimer(minutes: Int) {
+        _state.value = _state.value.copy(timerMinutes = minutes, timerRemainingMs = timerRemainingMs)
     }
 
     fun release() {

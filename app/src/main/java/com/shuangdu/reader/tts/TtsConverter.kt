@@ -55,6 +55,25 @@ class TtsConverter(
 
     private val indexes = ConcurrentHashMap<String, TtsIndex>()
 
+    /** 换音色后待重转的书：当前转换跑完 → 删旧音频 → 只重转原有章节 */
+    private val pendingReconvert = ConcurrentHashMap<String, Boolean>()
+
+    /**
+     * 换音色后重转：只重转「之前已经转好的那些章节」，绝不扩大到整本。
+     * 当前有转换在跑时不打断，跑完后再自动执行。
+     */
+    fun markReconvert(book: Book) {
+        if (isRunning(book.id)) {
+            pendingReconvert[book.id] = true
+            update(book.id) { it.copy(message = "换音色：等当前转换结束后自动重转") }
+        } else {
+            val index = indexOf(book)
+            val chapters = index.completedChapters()
+            index.resetAudio()
+            if (chapters.isNotEmpty()) convert(book, chapters)
+        }
+    }
+
     /** 同一本书共用一份索引实例，界面和转换才不会各读各的 */
     fun indexOf(book: Book): TtsIndex =
         indexes.getOrPut(book.id) {
@@ -171,6 +190,11 @@ class TtsConverter(
                 }
             } finally {
                 jobs.remove(book.id)
+                if (pendingReconvert.remove(book.id) == true) {
+                    val chapters = index.completedChapters()
+                    index.resetAudio()
+                    if (chapters.isNotEmpty()) scope.launch { convert(book, chapters) }
+                }
             }
         }
     }

@@ -16,10 +16,40 @@ data class TtsSettings(
 
 class TtsSettingsStore(context: Context) {
 
+    /** 收藏的音色 */
+    data class FavVoice(val id: String, val title: String)
+
     private val sp = context.getSharedPreferences("tts_settings", Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(load())
     val state: StateFlow<TtsSettings> = _state.asStateFlow()
     val current: TtsSettings get() = _state.value
+
+    private val _favorites = MutableStateFlow(loadFavorites())
+    val favorites: StateFlow<List<FavVoice>> = _favorites.asStateFlow()
+
+    fun isFavorite(id: String): Boolean = _favorites.value.any { it.id == id }
+
+    fun toggleFavorite(id: String, title: String) {
+        val list = _favorites.value.toMutableList()
+        val existing = list.firstOrNull { it.id == id }
+        if (existing != null) list.remove(existing) else list.add(0, FavVoice(id, title))
+        _favorites.value = list
+        sp.edit().putString("favorites", toJson(list)).apply()
+    }
+
+    private fun loadFavorites(): List<FavVoice> = runCatching {
+        val raw = sp.getString("favorites", null) ?: return@runCatching emptyList()
+        val arr = org.json.JSONArray(raw)
+        (0 until arr.length()).mapNotNull { o ->
+            arr.optJSONObject(o)?.let { FavVoice(it.optString("id"), it.optString("title")) }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun toJson(list: List<FavVoice>): String {
+        val arr = org.json.JSONArray()
+        list.forEach { arr.put(org.json.JSONObject().put("id", it.id).put("title", it.title)) }
+        return arr.toString()
+    }
 
     private fun load(): TtsSettings {
         val d = TtsSettings()

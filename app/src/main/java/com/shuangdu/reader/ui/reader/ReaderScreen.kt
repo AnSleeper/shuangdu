@@ -36,12 +36,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBackIosNew
+import androidx.compose.material.icons.rounded.CenterFocusStrong
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -61,7 +65,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -245,9 +251,10 @@ fun ReaderScreen(
     }
 
     // 听书：高亮当前段 + 自动翻页
+    var snapTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(
         playerState.bookId, playerState.chapter, playerState.segment,
-        engine.chapterIndex, pal
+        engine.chapterIndex, pal, snapTick
     ) {
         val src = engine.current as? PaginatedChapter ?: return@LaunchedEffect
         val playingHere = playerState.bookId == book.id &&
@@ -440,6 +447,52 @@ fun ReaderScreen(
                 onSeek = { jumpToChapter(it) }
             )
         }
+
+        // 听书悬浮条：播放时挂在右侧，可暂停、看倒计时、跳到朗读处，点条身打开听书面板
+        if (playerState.bookId == book.id && (playerState.playing || playerState.timerRemainingMs > 0)) {
+            Row(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 4.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { showTts = true }
+                    .padding(start = 10.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    if (playerState.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if (playerState.playing) "暂停" else "继续",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clickable {
+                            if (playerState.playing) container.ttsPlayer.pause()
+                            else container.ttsPlayer.resume()
+                        }
+                )
+                if (playerState.timerRemainingMs > 0) {
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "%d:%02d".format(
+                            playerState.timerRemainingMs / 60000,
+                            (playerState.timerRemainingMs / 1000) % 60
+                        ),
+                        fontSize = 10.sp,
+                        color = Color.White
+                    )
+                }
+                Spacer(Modifier.width(5.dp))
+                Icon(
+                    Icons.Rounded.CenterFocusStrong,
+                    "跳到正在读的段落",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable { snapTick++ }
+                )
+            }
+        }
     }
 
     if (showTts) {
@@ -459,6 +512,7 @@ fun ReaderScreen(
         bookTitle = book.title,
         titles = engine.chapterTitles,
         current = engine.chapterIndex,
+        audioChapters = ttsIndex.completedChapters().toSet(),
         onSelect = { jumpToChapter(it) },
         onDismiss = { showChapters = false }
     )

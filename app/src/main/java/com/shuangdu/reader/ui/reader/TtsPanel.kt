@@ -28,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -74,7 +75,7 @@ fun TtsPanel(
     val dir = remember(book.id) { File(container.repository.bookDir(book.id), "tts") }
 
     var showVoicePicker by remember { mutableStateOf(false) }
-    var timerMinutes by remember { mutableIntStateOf(0) }
+    var showReconvert by remember { mutableStateOf(false) }
     var playingChapter by remember { mutableIntStateOf(currentChapter) }
 
     val isThisBook = playerState.bookId == book.id
@@ -111,14 +112,9 @@ fun TtsPanel(
         }
     }
 
-    // 定时停止
-    LaunchedEffect(timerMinutes, isPlaying) {
-        if (timerMinutes > 0 && isPlaying) {
-            delay(timerMinutes * 60_000L)
-            container.ttsPlayer.pause()
-            timerMinutes = 0
-        }
-    }
+    // 定时停止由播放器自己管：只在播放时走，暂停就冻结
+    val timerMinutes = playerState.timerMinutes
+    val timerRemaining = playerState.timerRemainingMs
 
     val chaptersWithAudio = index.completedChapters()
 
@@ -169,6 +165,13 @@ fun TtsPanel(
                     )
                 }
                 TextButton(onClick = { showVoicePicker = true }) { Text("更换") }
+                if (index.voiceId.isNotBlank()) {
+                    TextButton(onClick = {
+                        container.ttsSettings.update {
+                            it.copy(globalVoiceId = index.voiceId, globalVoiceName = index.voiceName)
+                        }
+                    }) { Text("设为全局") }
+                }
             }
 
             Spacer(Modifier.height(14.dp))
@@ -177,7 +180,7 @@ fun TtsPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
-                        .size(48.dp)
+                        .size(58.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primary)
                         .clickable {
@@ -193,7 +196,7 @@ fun TtsPanel(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         if (isPlaying) "暂停" else "播放",
                         tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(30.dp)
                     )
                 }
                 Spacer(Modifier.width(14.dp))
@@ -241,7 +244,7 @@ fun TtsPanel(
                             modifier = Modifier.weight(1f)
                         )
                         if (p.running) {
-                            TextButton(onClick = { container.ttsConverter.pause(book.id) }) { Text("暂停") }
+                            TextButton(onClick = { container.ttsConverter.pause(book.id) }) { Text("暂停转换") }
                         } else {
                             TextButton(onClick = {
                                 container.ttsConverter.convert(book, null)
@@ -259,14 +262,48 @@ fun TtsPanel(
                 ActionChip("转整本") {
                     container.ttsConverter.convert(book, null)
                 }
-                ActionChip("定时 ${if (timerMinutes == 0) "关" else "${timerMinutes}分"}") {
-                    timerMinutes = when (timerMinutes) {
+                ActionChip(
+                    when {
+                        timerRemaining > 0 -> "剩 ${formatCountdown(timerRemaining)}"
+                        timerMinutes > 0 -> "定时 ${timerMinutes}分"
+                        else -> "定时 关"
+                    }
+                ) {
+                    val next = when (timerMinutes) {
                         0 -> 15
                         15 -> 30
                         30 -> 60
                         else -> 0
                     }
+                    container.ttsPlayer.setTimerMinutes(next)
                 }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "倍速",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(36.dp)
+                )
+                Slider(
+                    value = tts.speed,
+                    onValueChange = { v ->
+                        val s = (v * 10).toInt() / 10f
+                        container.ttsSettings.update { it.copy(speed = s) }
+                        container.ttsPlayer.setSpeed(s)
+                    },
+                    valueRange = 1f..2f,
+                    steps = 9,
+                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                )
+                Text(
+                    "x%.1f".format(tts.speed),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(38.dp)
+                )
             }
 
             Spacer(Modifier.height(14.dp))
@@ -341,10 +378,35 @@ fun TtsPanel(
             currentId = index.voiceId.ifBlank { tts.globalVoiceId },
             onDismiss = { showVoicePicker = false },
             onPick = { v ->
+                val hadAudio = index.completedChapters().isNotEmpty() ||
+                    container.ttsConverter.isRunning(book.id)
                 index.voiceId = v.id
                 index.voiceName = v.title
                 index.save()
                 showVoicePicker = false
+                if (hadAudio) showReconvert = true
+            }
+        )
+    }
+
+    if (showReconvert) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showReconvert = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("音色已更换") },
+            text = {
+                Text(
+                    "这本书已经转好的音频还是旧音色读的。\n\n要删掉这些音频、用新音色重新转换吗？\n（正在进行的转换不会被打断，跑完后会自动重转）\n\n选「先不重转」的话，之后新转的段落会用新音色，前后音色会不一致。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showReconvert = false
+                    container.ttsConverter.markReconvert(book)
+                }) { Text("删除并重转") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReconvert = false }) { Text("先不重转") }
             }
         )
     }
@@ -363,5 +425,7 @@ private fun ActionChip(text: String, onClick: () -> Unit) {
     }
 }
 
-@Suppress("unused")
-private fun unusedSegment(s: TtsSegment) = s
+private fun formatCountdown(ms: Long): String {
+    val totalSec = ms / 1000
+    return "%d:%02d".format(totalSec / 60, totalSec % 60)
+}
