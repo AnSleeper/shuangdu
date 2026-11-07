@@ -201,6 +201,7 @@ fun LibraryScreen(
     pendingDelete?.let { book ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("移出书架") },
             text = { Text("《${book.title}》会被从书架移除，并删掉导入时保存的副本。手机里原文件不受影响。") },
             confirmButton = {

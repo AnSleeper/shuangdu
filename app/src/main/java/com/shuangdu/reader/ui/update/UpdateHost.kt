@@ -84,23 +84,26 @@ fun UpdateHost(container: AppContainer, trigger: Int) {
     info?.let { update ->
         AlertDialog(
             onDismissRequest = { if (!downloading) info = null },
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
             title = { Text("发现新版本 ${update.versionName}") },
             text = {
-                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
-                    Text(
-                        "当前版本 ${BuildConfig.VERSION_NAME}  ·  " +
-                            if (update.apkSize > 0) "${update.apkSize / 1024 / 1024} MB" else "APK",
-                        fontSize = 12.sp,
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        update.changelog.ifBlank { "这次没有写更新说明。" },
-                        fontSize = 13.5.sp,
-                        lineHeight = 21.sp
-                    )
+                Column {
+                    Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
+                        Text(
+                            "当前版本 ${BuildConfig.VERSION_NAME}  ·  " +
+                                if (update.apkSize > 0) "${update.apkSize / 1024 / 1024} MB" else "APK",
+                            fontSize = 12.sp,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            update.changelog.ifBlank { "这次没有写更新说明。" },
+                            fontSize = 13.5.sp,
+                            lineHeight = 21.sp
+                        )
+                    }
                     if (downloading) {
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(14.dp))
                         LinearProgressIndicator(
                             progress = { progress },
                             modifier = Modifier.fillMaxWidth().height(4.dp)

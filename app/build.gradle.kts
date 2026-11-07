@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 import org.gradle.api.tasks.testing.Test
 
 plugins {
