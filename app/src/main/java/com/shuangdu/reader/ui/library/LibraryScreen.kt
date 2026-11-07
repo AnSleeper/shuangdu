@@ -41,6 +41,7 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
@@ -103,11 +104,13 @@ fun LibraryScreen(
     onOpenBook: (String) -> Unit,
     onImportUris: (List<Uri>) -> Unit,
     onNotify: (String) -> Unit,
-    onCheckUpdate: () -> Unit
+    onCheckUpdate: () -> Unit,
+    onOpenTts: () -> Unit
 ) {
     val books by container.library.books.collectAsStateWithLifecycle()
     val groups by container.library.groups.collectAsStateWithLifecycle()
     val settings by container.settings.state.collectAsStateWithLifecycle()
+    val ttsMap by container.ttsConverter.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -180,6 +183,27 @@ fun LibraryScreen(
                 }) {
                     Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.onBackground)
                 }
+                IconButton(onClick = {
+                    val targets = books.filter { it.id in selected }
+                    if (targets.isEmpty()) return@IconButton
+                    exitSelection()
+                    onNotify("开始转音频：${targets.size} 本")
+                    scope.launch {
+                        targets.forEach { b ->
+                            container.ttsConverter.convert(b)
+                            // 等这本转完再下一本，避免并发叠加
+                            var guard = 0
+                            while (container.ttsConverter.isRunning(b.id) && guard < 7200) {
+                                kotlinx.coroutines.delay(500)
+                                guard++
+                            }
+                            container.ttsConverter.clearFinished(b.id)
+                        }
+                        onNotify("音频转换完成")
+                    }
+                }) {
+                    Icon(Icons.Rounded.Headphones, "转音频", tint = MaterialTheme.colorScheme.onBackground)
+                }
                 IconButton(onClick = { showGroupPicker = true }) {
                     Icon(Icons.Rounded.DriveFileMove, "分组", tint = MaterialTheme.colorScheme.onBackground)
                 }
@@ -237,6 +261,14 @@ fun LibraryScreen(
                                 newGroupName = ""
                                 assignAfterCreate = false
                                 showNewGroup = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("听书设置") },
+                            leadingIcon = { Icon(Icons.Rounded.Headphones, null) },
+                            onClick = {
+                                menuOpen = false
+                                onOpenTts()
                             }
                         )
                         DropdownMenuItem(
@@ -331,11 +363,17 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 items(visible, key = { it.id }) { book ->
+                    val p = ttsMap[book.id]
                     BookCard(
                         book = book,
                         coverPath = container.repository.coverFile(book)?.absolutePath,
                         selectionMode = selectionMode,
                         selected = book.id in selected,
+                        audioReady = hasAudio(container, book),
+                        ttsRunning = p?.running == true,
+                        ttsProgress = p?.let {
+                            if (it.total <= 0) 0f else (it.done + it.failed).toFloat() / it.total
+                        } ?: 0f,
                         onClick = {
                             if (selectionMode) {
                                 if (book.id in selected) selected.remove(book.id) else selected.add(book.id)
@@ -526,8 +564,14 @@ private fun GroupRow(label: String, onClick: () -> Unit) {
     }
 }
 
-private fun collectDocs(context: android.content.Context, treeUri: Uri): List<Uri> {
-    val root = DocumentFile.fromTreeUri(context, treeUri) ?: return emptyList()
+/** 这本书有没有转好的音频（先看目录在不在，避免每本书都读 index） */
+private fun hasAudio(container: AppContainer, book: Book): Boolean {
+    val dir = java.io.File(container.repository.bookDir(book.id), "tts")
+    if (!java.io.File(dir, "index.json").exists()) return false
+    return container.ttsConverter.indexOf(book).hasAnyChapterComplete()
+}
+
+private fun collectDocs(context: android.content.Context, treeUri: Uri): List<Uri> {    val root = DocumentFile.fromTreeUri(context, treeUri) ?: return emptyList()
     val out = ArrayList<Uri>()
     fun walk(dir: DocumentFile, depth: Int) {
         if (depth > 6) return
@@ -591,6 +635,9 @@ private fun BookCard(
     coverPath: String?,
     selectionMode: Boolean,
     selected: Boolean,
+    audioReady: Boolean,
+    ttsRunning: Boolean,
+    ttsProgress: Float,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -654,6 +701,39 @@ private fun BookCard(
                         .padding(6.dp)
                         .size(14.dp)
                 )
+            }
+            if (audioReady && !selectionMode) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .padding(3.dp)
+                ) {
+                    Icon(
+                        Icons.Rounded.Headphones,
+                        "已有音频",
+                        tint = Color(0xFF9FD8C0),
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
+            }
+            if (ttsRunning) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        "转 ${(ttsProgress * 100).toInt()}%",
+                        fontSize = 8.sp,
+                        color = Color(0xFF9FD8C0)
+                    )
+                }
             }
             if (selectionMode) {
                 Box(

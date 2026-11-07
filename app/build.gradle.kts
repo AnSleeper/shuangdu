@@ -20,8 +20,8 @@ android {
         applicationId = "com.shuangdu.reader"
         minSdk = 26
         targetSdk = 34
-        versionCode = 122
-        versionName = "1.2.2"
+        versionCode = 130
+        versionName = "1.3.0"
         resourceConfigurations += listOf("zh", "en")
 
         // 自动更新用的仓库坐标，改仓库时只改这两行
@@ -105,6 +105,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

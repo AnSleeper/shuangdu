@@ -1,4 +1,4 @@
-package com.shuangdu.reader.ui.reader
+﻿package com.shuangdu.reader.ui.reader
 
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -54,12 +54,60 @@ class PaginatedChapter private constructor(
 
     override val pageCount: Int get() = pageStarts.size.coerceAtLeast(1)
 
+    /** 听书写用：当前排版后的完整文本 */
+    val displayText: CharSequence get() = layout.text
+
+    private var hlStart = -1
+    private var hlEnd = -1
+    private var hlColor = 0
+
+    /** 听书高亮：把当前朗读的那段所在行刷一层底色 */
+    override fun highlightByText(text: String, color: Int): Int {
+        if (text.isBlank()) {
+            hlStart = -1
+            hlEnd = -1
+            return -1
+        }
+        val hay = layout.text
+        var idx = hay.indexOf(text)
+        if (idx < 0 && text.length > 12) {
+            idx = hay.indexOf(text.take(12))
+            if (idx >= 0) {
+                hlStart = idx
+                hlEnd = (idx + text.length).coerceAtMost(hay.length)
+                hlColor = color
+                return idx
+            }
+        }
+        if (idx < 0) return -1
+        hlStart = idx
+        hlEnd = (idx + text.length).coerceAtMost(hay.length)
+        hlColor = color
+        return idx
+    }
+
     override fun drawPage(canvas: Canvas, page: Int) {
         if (pageStarts.isEmpty()) return
         val first = pageStarts[page.coerceIn(0, pageStarts.size - 1)]
         canvas.save()
         canvas.clipRect(0, 0, layout.width, pageHeight)
         canvas.translate(0f, -layout.getLineTop(first).toFloat())
+        if (hlStart >= 0 && hlEnd > hlStart) {
+            val from = layout.getLineForOffset(hlStart.coerceIn(0, layout.text.length - 1))
+            val to = layout.getLineForOffset((hlEnd - 1).coerceIn(0, layout.text.length - 1))
+            if (from in 0 until layout.lineCount && to in 0 until layout.lineCount) {
+                hlPaint.color = hlColor
+                for (l in from..to) {
+                    canvas.drawRect(
+                        0f,
+                        layout.getLineTop(l).toFloat(),
+                        layout.width.toFloat(),
+                        layout.getLineBottom(l).toFloat(),
+                        hlPaint
+                    )
+                }
+            }
+        }
         layout.draw(canvas)
         canvas.restore()
     }
@@ -82,6 +130,7 @@ class PaginatedChapter private constructor(
     }
 
     companion object {
+        private val hlPaint = Paint()
         /**
          * 段落规范化：每行 = 一段，剥掉行首尾空白后统一补两个全角空格。
          * gap = 段间距占一行高度的比例，0 表示不留空，1 表示整整一行。

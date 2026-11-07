@@ -116,7 +116,10 @@ fun ReaderScreen(
     var showUi by remember { mutableStateOf(false) }
     var showChapters by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showTts by remember { mutableStateOf(false) }
     var textArea by remember { mutableStateOf(IntSize.Zero) }
+    val ttsIndex = remember(book.id) { container.ttsConverter.indexOf(book) }
+    val playerState by container.ttsPlayer.state.collectAsStateWithLifecycle()
 
     val statusBar = with(density) { WindowInsets.statusBars.asPaddingValues().calculateTopPadding() }
     val navBar = with(density) { WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() }
@@ -226,6 +229,48 @@ fun ReaderScreen(
         showChapters = false
         anchor = 0
         engine.moveToChapter(index, 0)
+    }
+
+    /** 当前页第一个落在这页上的段号，用于「从本页开始听」 */
+    fun startSegmentOfCurrentPage(): Int {
+        val src = engine.current as? PaginatedChapter ?: return 0
+        val pageStart = src.charOffsetAtPage(engine.page)
+        val text = src.displayText
+        val segs = ttsIndex.segmentsOf(engine.chapterIndex)
+        for (s in segs) {
+            val i = text.indexOf(s.text)
+            if (i >= pageStart) return s.index
+        }
+        return segs.firstOrNull()?.index ?: 0
+    }
+
+    // 听书：高亮当前段 + 自动翻页
+    LaunchedEffect(
+        playerState.bookId, playerState.chapter, playerState.segment,
+        engine.chapterIndex, pal
+    ) {
+        val src = engine.current as? PaginatedChapter ?: return@LaunchedEffect
+        val playingHere = playerState.bookId == book.id &&
+            playerState.chapter == engine.chapterIndex &&
+            playerState.segment >= 0
+        if (!playingHere) {
+            src.highlightByText("", 0)
+            engine.highlightVersion++
+            return@LaunchedEffect
+        }
+        val seg = playerState.segments.firstOrNull { it.index == playerState.segment }
+            ?: ttsIndex.segmentsOf(engine.chapterIndex).firstOrNull { it.index == playerState.segment }
+            ?: return@LaunchedEffect
+        val color = (pal.primary.copy(alpha = 0.22f)).toArgb()
+        val idx = src.highlightByText(seg.text, color)
+        engine.highlightVersion++
+        if (idx >= 0) {
+            val target = src.pageOfCharOffset(idx)
+            if (target != engine.page) {
+                engine.page = target
+                anchor = src.charOffsetAtPage(target)
+            }
+        }
     }
 
     LaunchedEffect(engine.chapterIndex, engine.page) {
@@ -391,10 +436,22 @@ fun ReaderScreen(
                 onPrev = { goPrev() },
                 onNext = { goNext() },
                 onSettings = { showSettings = true },
-                onTts = { onNotify("听书功能会在下一版接入") },
+                onTts = { showTts = true },
                 onSeek = { jumpToChapter(it) }
             )
         }
+    }
+
+    if (showTts) {
+        TtsPanel(
+            container = container,
+            book = book,
+            chapterTitles = engine.chapterTitles,
+            currentChapter = engine.chapterIndex,
+            startSegment = startSegmentOfCurrentPage(),
+            onDismiss = { showTts = false },
+            onJumpToChapter = { jumpToChapter(it) }
+        )
     }
 
     ChapterDrawer(

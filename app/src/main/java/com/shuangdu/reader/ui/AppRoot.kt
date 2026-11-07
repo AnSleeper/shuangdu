@@ -34,6 +34,7 @@ import com.shuangdu.reader.ui.library.LibraryScreen
 import com.shuangdu.reader.ui.reader.ReaderScreen
 import com.shuangdu.reader.ui.theme.SdTheme
 import com.shuangdu.reader.ui.theme.paletteOf
+import com.shuangdu.reader.ui.tts.TtsSettingsScreen
 import com.shuangdu.reader.ui.update.UpdateHost
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import kotlinx.coroutines.withContext
 
 sealed interface Route {
     data object Library : Route
+    data object Tts : Route
     data class Reader(val bookId: String) : Route
 }
 
@@ -159,7 +161,13 @@ private fun AppRootContent(container: AppContainer, pendingOpen: MutableState<Ur
                     onOpenBook = { route = Route.Reader(it) },
                     onImportUris = { importAndOpen(it) },
                     onNotify = { notify(it) },
-                    onCheckUpdate = { updateTick++ }
+                    onCheckUpdate = { updateTick++ },
+                    onOpenTts = { route = Route.Tts }
+                )
+
+                is Route.Tts -> TtsSettingsScreen(
+                    container = container,
+                    onBack = { route = Route.Library }
                 )
 
                 is Route.Reader -> ReaderScreen(

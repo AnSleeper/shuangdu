@@ -167,6 +167,9 @@ fun ReaderPager(
             )
     ) {
         drawRect(brush = bgBrush)
+        // 读一下高亮版本号，高亮变化时触发重绘
+        @Suppress("UNUSED_EXPRESSION")
+        engine.highlightVersion
 
         val off = if (dragging) dragValue else anim.value
         val w = size.width

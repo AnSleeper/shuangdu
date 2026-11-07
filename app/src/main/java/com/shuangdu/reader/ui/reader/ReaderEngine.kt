@@ -32,6 +32,9 @@ class ReaderEngine(initialChapter: Int) {
 
     var error by mutableStateOf<String?>(null)
 
+    /** 听书高亮变化时 +1，用来触发重绘 */
+    var highlightVersion by mutableIntStateOf(0)
+
     fun clearLayouts() {
         layouts = emptyMap()
     }
