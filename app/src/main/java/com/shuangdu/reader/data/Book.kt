@@ -22,7 +22,8 @@ data class Book(
     val charOffset: Int,
     val chapterTitle: String,
     val totalChapters: Int,
-    val finished: Boolean = false
+    val finished: Boolean = false,
+    val groupId: String? = null
 ) {
     val formatName: String get() = if (format == BookFormat.EPUB) "EPUB" else "TXT"
 
@@ -41,6 +42,7 @@ data class Book(
         put("chapterTitle", chapterTitle)
         put("totalChapters", totalChapters)
         put("finished", finished)
+        put("groupId", groupId ?: "")
     }
 
     companion object {
@@ -59,7 +61,29 @@ data class Book(
             charOffset = o.optInt("charOffset", 0),
             chapterTitle = o.optString("chapterTitle", ""),
             totalChapters = o.optInt("totalChapters", 1),
-            finished = o.optBoolean("finished", false)
+            finished = o.optBoolean("finished", false),
+            groupId = o.optString("groupId", "").ifBlank { null }
+        )
+    }
+}
+
+/** 书架分组 */
+data class BookGroup(
+    val id: String,
+    val name: String,
+    val createdAt: Long
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("name", name)
+        put("createdAt", createdAt)
+    }
+
+    companion object {
+        fun fromJson(o: JSONObject): BookGroup = BookGroup(
+            id = o.optString("id"),
+            name = o.optString("name", "未命名分组"),
+            createdAt = o.optLong("createdAt", 0L)
         )
     }
 }

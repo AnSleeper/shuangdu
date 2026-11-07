@@ -32,6 +32,7 @@ class BookRepository(
 
     private val booksDir = File(context.filesDir, "books").apply { mkdirs() }
     private val chapterCache = ConcurrentHashMap<String, List<Chapter>>()
+    private val imageCache = android.util.LruCache<String, android.graphics.Bitmap>(16)
     private val textCache = object : LinkedHashMap<String, String>(4, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean = size > 6
     }
@@ -39,10 +40,33 @@ class BookRepository(
     fun bookDir(id: String): File = File(booksDir, id)
     fun contentFile(id: String): File = File(bookDir(id), "content.txt")
     fun indexFile(id: String): File = File(bookDir(id), "index.json")
+    fun imageDir(id: String): File = File(bookDir(id), "images")
     fun coverFile(book: Book): File? {
         if (!book.hasCover) return null
         val f = File(bookDir(book.id), "cover.img")
         return if (f.exists() && f.length() > 0) f else null
+    }
+
+    /** 章节正文里的图片，按序号读文件并缩放到正文宽度 */
+    fun loadChapterImage(book: Book, name: String, targetWidth: Int): android.graphics.Bitmap? {
+        val f = File(imageDir(book.id), "$name.img")
+        if (!f.exists()) return null
+        val key = "${book.id}:$name:$targetWidth"
+        imageCache.get(key)?.let { return it }
+        return runCatching {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(f.absolutePath, bounds)
+            var sample = 1
+            var w = bounds.outWidth
+            while (w > 0 && w / sample > targetWidth * 1.5f) {
+                sample *= 2
+                w = bounds.outWidth / sample
+            }
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath, opts)
+            if (bmp != null) imageCache.put(key, bmp)
+            bmp
+        }.getOrNull()
     }
 
     suspend fun import(uri: Uri): ImportResult = withContext(Dispatchers.IO) {
@@ -77,6 +101,7 @@ class BookRepository(
             var author = parsedName.second
             var chapters: List<ChapterSplitter.Split>
             var cover: ByteArray? = null
+            var images: List<ByteArray> = emptyList()
 
             if (format == BookFormat.EPUB) {
                 val tmp = File(context.cacheDir, "import_${System.currentTimeMillis()}.epub")
@@ -90,6 +115,7 @@ class BookRepository(
                 if (parsed.title.isNotBlank()) title = parsed.title
                 if (parsed.author.isNotBlank()) author = parsed.author
                 cover = parsed.cover
+                images = parsed.images
             } else {
                 val text = TextCodec.decode(bytes)
                 if (text.isBlank()) return@withContext ImportResult.Failure("这个 TXT 是空的")
@@ -110,6 +136,12 @@ class BookRepository(
             val dir = bookDir(id).apply { mkdirs() }
             val index = writeChapters(dir, chapters)
             cover?.let { runCatching { File(dir, "cover.img").writeBytes(it) } }
+            if (images.isNotEmpty()) {
+                val imgDir = File(dir, "images").apply { mkdirs() }
+                images.forEachIndexed { i, data ->
+                    runCatching { File(imgDir, "$i.img").writeBytes(data) }
+                }
+            }
 
             val now = System.currentTimeMillis()
             val book = Book(

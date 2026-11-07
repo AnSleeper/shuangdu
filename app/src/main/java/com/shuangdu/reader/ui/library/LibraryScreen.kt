@@ -2,10 +2,13 @@ package com.shuangdu.reader.ui.library
 
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,33 +24,45 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.DriveFileMove
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,8 +72,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,14 +84,16 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuangdu.reader.AppContainer
 import com.shuangdu.reader.data.Book
-import com.shuangdu.reader.data.BookFormat
+import com.shuangdu.reader.data.Skin
+import com.shuangdu.reader.ui.reader.SkinOption
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asImageBitmap
 
-@OptIn(ExperimentalFoundationApi::class)
+private const val FILTER_ALL = "all"
+private const val FILTER_NONE = "none"
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     container: AppContainer,
@@ -86,11 +105,21 @@ fun LibraryScreen(
     onCheckUpdate: () -> Unit
 ) {
     val books by container.library.books.collectAsStateWithLifecycle()
+    val groups by container.library.groups.collectAsStateWithLifecycle()
+    val settings by container.settings.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var menuOpen by remember { mutableStateOf(false) }
-    var pendingDelete by remember { mutableStateOf<Book?>(null) }
+    var pendingDelete by remember { mutableStateOf<List<Book>>(emptyList()) }
+    var selectionMode by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<String>() }
+    var filter by remember { mutableStateOf(FILTER_ALL) }
+    var showGroupPicker by remember { mutableStateOf(false) }
+    var showNewGroup by remember { mutableStateOf(false) }
+    var showSkinPicker by remember { mutableStateOf(false) }
+    var newGroupName by remember { mutableStateOf("") }
+    var assignAfterCreate by remember { mutableStateOf(false) }
 
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onImportUris(uris)
@@ -103,58 +132,149 @@ fun LibraryScreen(
         }
     }
 
+    val visible = when (filter) {
+        FILTER_ALL -> books
+        FILTER_NONE -> books.filter { it.groupId == null }
+        else -> books.filter { it.groupId == filter }
+    }
+
+    fun exitSelection() {
+        selectionMode = false
+        selected.clear()
+    }
+
+    BackHandler(enabled = selectionMode) { exitSelection() }
+
     Column(
         Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .systemBarsPadding()
     ) {
+        // 顶栏
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 8.dp, top = 14.dp, bottom = 10.dp),
+                .padding(start = 20.dp, end = 8.dp, top = 14.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
+            if (selectionMode) {
                 Text(
-                    "书架",
+                    "已选 ${selected.size}",
                     style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f)
                 )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    if (books.isEmpty()) "还没有书" else "${books.size} 本 · 全部在本地",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
-                Icon(Icons.Rounded.Add, contentDescription = "导入", tint = MaterialTheme.colorScheme.onBackground)
-            }
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(
-                        Icons.Rounded.MoreVert,
-                        contentDescription = "更多",
-                        tint = MaterialTheme.colorScheme.onBackground
+                IconButton(onClick = {
+                    pendingDelete = books.filter { it.id in selected }
+                }) {
+                    Icon(Icons.Rounded.DeleteOutline, "删除", tint = MaterialTheme.colorScheme.onBackground)
+                }
+                IconButton(onClick = { showGroupPicker = true }) {
+                    Icon(Icons.Rounded.DriveFileMove, "分组", tint = MaterialTheme.colorScheme.onBackground)
+                }
+                IconButton(onClick = { exitSelection() }) {
+                    Icon(Icons.Rounded.Close, "取消", tint = MaterialTheme.colorScheme.onBackground)
+                }
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "书架",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        if (books.isEmpty()) "还没有书" else "${books.size} 本 · 全部在本地",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("导入文件夹") },
-                        leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) },
-                        onClick = {
-                            menuOpen = false
-                            pickFolder.launch(null)
+                IconButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
+                    Icon(Icons.Rounded.Add, "导入", tint = MaterialTheme.colorScheme.onBackground)
+                }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(
+                            Icons.Rounded.MoreVert,
+                            "更多",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("导入文件夹") },
+                            leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) },
+                            onClick = {
+                                menuOpen = false
+                                pickFolder.launch(null)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("多选管理") },
+                            leadingIcon = { Icon(Icons.Rounded.Check, null) },
+                            onClick = {
+                                menuOpen = false
+                                selectionMode = true
+                                selected.clear()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("新建分组") },
+                            leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, null) },
+                            onClick = {
+                                menuOpen = false
+                                newGroupName = ""
+                                assignAfterCreate = false
+                                showNewGroup = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("检查更新") },
+                            leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
+                            onClick = {
+                                menuOpen = false
+                                onCheckUpdate()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("皮肤") },
+                            leadingIcon = { Icon(Icons.Rounded.Palette, null) },
+                            onClick = {
+                                menuOpen = false
+                                showSkinPicker = true
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 分组筛选
+        if (books.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    FilterChip("全部", books.size, filter == FILTER_ALL) { filter = FILTER_ALL }
+                }
+                item {
+                    val n = books.count { it.groupId == null }
+                    FilterChip("未分组", n, filter == FILTER_NONE) { filter = FILTER_NONE }
+                }
+                items(groups, key = { it.id }) { g ->
+                    val n = books.count { it.groupId == g.id }
+                    FilterChip(
+                        g.name,
+                        n,
+                        filter == g.id,
+                        onLongClick = {
+                            container.library.deleteGroup(g.id)
+                            if (filter == g.id) filter = FILTER_ALL
+                            onNotify("已删除分组「${g.name}」，书回到未分组")
                         }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("检查更新") },
-                        leadingIcon = { Icon(Icons.Rounded.Refresh, null) },
-                        onClick = {
-                            menuOpen = false
-                            onCheckUpdate()
-                        }
-                    )
+                    ) { filter = g.id }
                 }
             }
         }
@@ -172,12 +292,26 @@ fun LibraryScreen(
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
                 Spacer(Modifier.width(10.dp))
-                Text(busyText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    busyText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
-        if (books.isEmpty()) {
-            EmptyState(onPick = { pickFiles.launch(arrayOf("*/*")) })
+        if (visible.isEmpty()) {
+            if (books.isEmpty()) {
+                EmptyState(onPick = { pickFiles.launch(arrayOf("*/*")) })
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "这个分组里还没有书",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
@@ -186,33 +320,199 @@ fun LibraryScreen(
                 horizontalArrangement = Arrangement.spacedBy(13.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                items(books, key = { it.id }) { book ->
+                items(visible, key = { it.id }) { book ->
                     BookCard(
                         book = book,
                         coverPath = container.repository.coverFile(book)?.absolutePath,
-                        onClick = { onOpenBook(book.id) },
-                        onLongClick = { pendingDelete = book }
+                        selectionMode = selectionMode,
+                        selected = book.id in selected,
+                        onClick = {
+                            if (selectionMode) {
+                                if (book.id in selected) selected.remove(book.id) else selected.add(book.id)
+                            } else {
+                                onOpenBook(book.id)
+                            }
+                        },
+                        onLongClick = {
+                            if (!selectionMode) {
+                                selectionMode = true
+                                selected.clear()
+                            }
+                            if (book.id in selected) selected.remove(book.id) else selected.add(book.id)
+                        }
                     )
                 }
             }
         }
     }
 
-    pendingDelete?.let { book ->
+    // 删除确认
+    if (pendingDelete.isNotEmpty()) {
         AlertDialog(
-            onDismissRequest = { pendingDelete = null },
+            onDismissRequest = { pendingDelete = emptyList() },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("移出书架") },
-            text = { Text("《${book.title}》会被从书架移除，并删掉导入时保存的副本。手机里原文件不受影响。") },
+            title = { Text(if (pendingDelete.size == 1) "移出书架" else "移出 ${pendingDelete.size} 本书") },
+            text = {
+                Text(
+                    if (pendingDelete.size == 1) {
+                        "《${pendingDelete.first().title}》会被从书架移除，并删掉导入时保存的副本。手机里原文件不受影响。"
+                    } else {
+                        "选中的 ${pendingDelete.size} 本书会被移除，并删掉导入时保存的副本。手机里原文件不受影响。"
+                    }
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    container.repository.delete(book)
-                    pendingDelete = null
-                    onNotify("已移除《${book.title}》")
+                    pendingDelete.forEach { container.repository.delete(it) }
+                    onNotify(if (pendingDelete.size == 1) "已移除" else "已移除 ${pendingDelete.size} 本")
+                    pendingDelete = emptyList()
+                    exitSelection()
                 }) { Text("移除") }
             },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { pendingDelete = emptyList() }) { Text("取消") } }
         )
+    }
+
+    // 新建分组
+    if (showNewGroup) {
+        AlertDialog(
+            onDismissRequest = { showNewGroup = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("新建分组") },
+            text = {
+                OutlinedTextField(
+                    value = newGroupName,
+                    onValueChange = { newGroupName = it },
+                    singleLine = true,
+                    placeholder = { Text("比如：在看 / 已读完") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val g = container.library.createGroup(newGroupName)
+                    if (assignAfterCreate) {
+                        container.library.assignGroup(selected, g.id)
+                        exitSelection()
+                        onNotify("已新建「${g.name}」并移入")
+                    } else {
+                        onNotify("已新建分组「${g.name}」")
+                    }
+                    assignAfterCreate = false
+                    showNewGroup = false
+                    filter = g.id
+                }) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { showNewGroup = false }) { Text("取消") } }
+        )
+    }
+
+    // 移动到分组
+    if (showGroupPicker) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showGroupPicker = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.padding(bottom = 26.dp)) {
+                Text(
+                    "移到分组（${selected.size} 本）",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 22.dp, bottom = 8.dp)
+                )
+                GroupRow("未分组") {
+                    container.library.assignGroup(selected, null)
+                    showGroupPicker = false
+                    exitSelection()
+                    onNotify("已移到未分组")
+                }
+                groups.forEach { g ->
+                    GroupRow(g.name) {
+                        container.library.assignGroup(selected, g.id)
+                        showGroupPicker = false
+                        exitSelection()
+                        onNotify("已移到「${g.name}」")
+                    }
+                }
+                GroupRow("＋ 新建分组并移入") {
+                    showGroupPicker = false
+                    newGroupName = ""
+                    assignAfterCreate = true
+                    showNewGroup = true
+                }
+            }
+        }
+    }
+
+    // 皮肤
+    if (showSkinPicker) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showSkinPicker = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(Modifier.padding(start = 22.dp, end = 22.dp, bottom = 30.dp)) {
+                Text("皮肤", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "书架和阅读页一起换",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Skin.entries.forEach { s ->
+                        SkinOption(s, selected = settings.skin == s) {
+                            container.settings.setSkin(s)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FilterChip(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 13.dp, vertical = 6.dp)
+    ) {
+        Text(
+            "$label $count",
+            fontSize = 12.sp,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
+private fun GroupRow(label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 14.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -249,7 +549,12 @@ private fun EmptyState(onPick: () -> Unit) {
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
-            Text("书", fontSize = 40.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.SemiBold)
+            Text(
+                "书",
+                fontSize = 40.sp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.SemiBold
+            )
         }
         Spacer(Modifier.height(20.dp))
         Text("书架还是空的", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
@@ -274,6 +579,8 @@ private fun EmptyState(onPick: () -> Unit) {
 private fun BookCard(
     book: Book,
     coverPath: String?,
+    selectionMode: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -289,7 +596,7 @@ private fun BookCard(
                 .fillMaxWidth()
                 .aspectRatio(0.72f)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFFE7E2D8))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
         ) {
             val bitmap = rememberBookCover(coverPath)
             if (bitmap != null) {
@@ -303,7 +610,7 @@ private fun BookCard(
                 PlaceholderCover(book)
             }
             Surface(
-                color = Color.Black.copy(alpha = 0.34f),
+                color = Color.Black.copy(alpha = 0.42f),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -337,6 +644,29 @@ private fun BookCard(
                         .padding(6.dp)
                         .size(14.dp)
                 )
+            }
+            if (selectionMode) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = if (selected) 0.28f else 0.10f))
+                )
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary
+                            else Color.Black.copy(alpha = 0.35f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (selected) {
+                        Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    }
+                }
             }
         }
         Spacer(Modifier.height(7.dp))

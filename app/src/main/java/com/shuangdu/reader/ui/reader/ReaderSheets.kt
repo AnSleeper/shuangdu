@@ -1,6 +1,7 @@
 package com.shuangdu.reader.ui.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,25 +25,21 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shuangdu.reader.data.PageAnim
 import com.shuangdu.reader.data.ReadFont
-import com.shuangdu.reader.data.ReadTheme
 import com.shuangdu.reader.data.ReaderSettings
+import com.shuangdu.reader.data.Skin
 import com.shuangdu.reader.ui.theme.paletteOf
-import androidx.compose.foundation.clickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,7 +59,11 @@ fun ReaderSettingsSheet(
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(Modifier.padding(horizontal = 22.dp).padding(bottom = 28.dp)) {
+        Column(
+            Modifier
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 28.dp)
+        ) {
             Text("字体大小", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("A", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -97,34 +98,13 @@ fun ReaderSettingsSheet(
                 modifier = Modifier.padding(vertical = 2.dp)
             )
 
+            Spacer(Modifier.height(12.dp))
+            Text("背景皮肤", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(10.dp))
-            Text("背景", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ReadTheme.entries.forEach { t ->
-                    val p = paletteOf(t)
-                    Box(
-                        Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(p.bg)
-                            .clickable { onChange { it.copy(theme = t) } },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            t.label,
-                            fontSize = 11.sp,
-                            color = p.text,
-                            fontWeight = if (settings.theme == t) FontWeight.Bold else FontWeight.Normal
-                        )
-                        if (settings.theme == t) {
-                            Box(
-                                Modifier
-                                    .matchParentSize()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
-                            )
-                        }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Skin.entries.forEach { s ->
+                    SkinOption(s, selected = settings.skin == s) {
+                        onChange { it.copy(skin = s) }
                     }
                 }
             }
@@ -161,6 +141,48 @@ fun ReaderSettingsSheet(
 }
 
 @Composable
+fun SkinOption(skin: Skin, selected: Boolean, onClick: () -> Unit) {
+    val p = paletteOf(skin)
+    Column(
+        Modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(p.readBg),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .size(15.dp)
+                    .clip(CircleShape)
+                    .background(p.readText)
+            )
+            if (selected) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(p.primary.copy(alpha = 0.20f))
+                )
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(
+            skin.label,
+            fontSize = 10.5.sp,
+            color = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
 private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
@@ -170,7 +192,7 @@ private fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
                 else MaterialTheme.colorScheme.surfaceVariant
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 15.dp, vertical = 8.dp)
     ) {
         Text(
             text,

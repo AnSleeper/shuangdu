@@ -16,15 +16,11 @@ class ReaderEngine(initialChapter: Int) {
 
     var page by mutableIntStateOf(0)
 
-    var layouts by mutableStateOf<Map<Int, PaginatedChapter>>(emptyMap())
+    var layouts by mutableStateOf<Map<Int, PageSource>>(emptyMap())
         private set
 
     /** 排版参数指纹，变了就要全部重排 */
     var styleToken: Any? = null
-
-    fun clearLayouts() {
-        layouts = emptyMap()
-    }
 
     var chapterTexts by mutableStateOf<Map<Int, String>>(emptyMap())
         private set
@@ -36,7 +32,11 @@ class ReaderEngine(initialChapter: Int) {
 
     var error by mutableStateOf<String?>(null)
 
-    val current: PaginatedChapter? get() = layouts[chapterIndex]
+    fun clearLayouts() {
+        layouts = emptyMap()
+    }
+
+    val current: PageSource? get() = layouts[chapterIndex]
 
     fun currentPageCount(): Int = current?.pageCount ?: 0
 
@@ -46,12 +46,11 @@ class ReaderEngine(initialChapter: Int) {
         chapterTitles = titles
     }
 
-    fun putLayout(index: Int, layout: PaginatedChapter) {
+    fun putLayout(index: Int, layout: PageSource) {
         val map = layouts.toMutableMap()
         map[index] = layout
-        // 只保留前后各一章
-        val keep = map.keys.filter { it < chapterIndex - 1 || it > chapterIndex + 1 }
-        keep.forEach { map.remove(it) }
+        val drop = map.keys.filter { it < chapterIndex - 1 || it > chapterIndex + 1 }
+        drop.forEach { map.remove(it) }
         layouts = map
     }
 
@@ -65,17 +64,10 @@ class ReaderEngine(initialChapter: Int) {
     }
 
     fun textOf(index: Int): String? = chapterTexts[index]
+
     fun moveToChapter(index: Int, targetPage: Int) {
         chapterIndex = index
         page = targetPage
-    }
-
-    fun ensureLayout(index: Int, builder: (String) -> PaginatedChapter?): PaginatedChapter? {
-        layouts[index]?.let { return it }
-        val text = chapterTexts[index] ?: return null
-        val layout = builder(text) ?: return null
-        putLayout(index, layout)
-        return layout
     }
 
     fun pageOf(chapter: Int, charOffset: Int): Int = layouts[chapter]?.pageOfCharOffset(charOffset) ?: 0

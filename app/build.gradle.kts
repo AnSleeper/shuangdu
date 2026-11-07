@@ -20,8 +20,8 @@ android {
         applicationId = "com.shuangdu.reader"
         minSdk = 26
         targetSdk = 34
-        versionCode = 100
-        versionName = "1.0.0"
+        versionCode = 110
+        versionName = "1.1.0"
         resourceConfigurations += listOf("zh", "en")
 
         // 自动更新用的仓库坐标，改仓库时只改这两行

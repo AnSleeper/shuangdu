@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>爽读爽听 · 配色原型</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 36px 20px 64px;
+    background: #0c0d0f;
+    color: #d8d8d8;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; gap: 34px;
+  }
+  h1 { font-size: 19px; font-weight: 600; letter-spacing: .5px; margin: 0 0 4px; color: #ecebe8; }
+  .sub { font-size: 12.5px; color: #86888c; margin-bottom: 8px; text-align: center; line-height: 1.7; }
+  .card {
+    width: 760px; max-width: 100%;
+    border-radius: 18px; padding: 20px 22px 24px;
+    background: #141618; border: 1px solid #23262a;
+  }
+  .card-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .name { font-size: 15px; font-weight: 600; color: #f0efec; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #24282c; color: #9aa0a6; }
+  .desc { font-size: 12px; color: #7e8388; margin-bottom: 14px; }
+  .swatches { display: flex; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+  .sw { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: #8b9096; }
+  .sw i { width: 14px; height: 14px; border-radius: 4px; display: block; border: 1px solid rgba(255,255,255,.12); }
+  .phones { display: flex; gap: 26px; justify-content: center; }
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .phone-label { font-size: 11px; color: #6f757b; }
+  .phone {
+    width: 322px; height: 640px; border-radius: 34px; overflow: hidden;
+    position: relative; box-shadow: 0 18px 40px rgba(0,0,0,.55);
+    display: flex; flex-direction: column;
+  }
+  /* ---------- 书架 ---------- */
+  .lib { flex: 1; padding: 22px 16px 0; display: flex; flex-direction: column; }
+  .lib-top { display: flex; align-items: flex-start; justify-content: space-between; }
+  .lib-title { font-size: 25px; font-weight: 600; letter-spacing: .5px; }
+  .lib-count { font-size: 11px; margin-top: 4px; opacity: .78; }
+  .lib-icons { display: flex; gap: 14px; font-size: 17px; opacity: .92; margin-top: 8px; }
+  .covers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; }
+  .cover {
+    aspect-ratio: .72; border-radius: 7px; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; line-height: 1.45; text-align: center; padding: 8px;
+    color: rgba(255,255,255,.92); font-weight: 500;
+  }
+  .cover .badge {
+    position: absolute; left: 5px; bottom: 5px; font-size: 8px;
+    padding: 1px 4px; border-radius: 4px; background: rgba(0,0,0,.38); color: #fff;
+  }
+  .cover .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; }
+  .b-name { font-size: 11.5px; margin-top: 7px; line-height: 1.5; }
+  .b-author { font-size: 10px; opacity: .62; margin-top: 1px; }
+  /* ---------- 阅读页 ---------- */
+  .read { flex: 1; padding: 20px 24px 0; display: flex; flex-direction: column; }
+  .read-chapter { font-size: 10.5px; margin-bottom: 12px; opacity: .8; }
+  .read-body { font-size: 16.5px; line-height: 1.95; flex: 1; }
+  .read-body p { margin: 0 0 14px; text-indent: 2em; }
+  .status { display: flex; justify-content: space-between; font-size: 10px; padding: 8px 0 10px; opacity: .75; }
+  .toolbar { display: flex; justify-content: space-around; align-items: center; padding: 10px 4px 14px; border-top: 1px solid; }
+  .tool { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9.5px; }
+  .tool span.ic { font-size: 14px; }
+  .slider { height: 3px; border-radius: 2px; margin: 0 4px 12px; position: relative; }
+  .slider b { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<h1>爽读爽听 · 4 套皮肤原型</h1>
+<div class="sub">每套都是「书架 + 阅读页」一起换，按钮/副文字全部提亮或加深，保证一眼能认出来。<br>字号统一按你现在的设置示意（正文 16.5px / 行距 1.95 / 首行缩进 2 字）。</div>
+
+<!-- ============ 1 纸感 ============ -->
+<div class="card" style="
+  --app-bg:#F7F3EA; --app-surface:#FFFFFF; --app-text:#191A17; --app-sub:#57534B; --app-accent:#2A6459;
+  --rd-bg:#F6EEDD; --rd-text:#241F19; --rd-sub:#6E6252; --rd-line:#E2D7C2;">
+  <div class="card-head"><div class="name">① 纸感（当前配色 · 提对比度）</div><div class="tag">浅色</div></div>
+  <div class="desc">背景不变，标题 / 正文 / 按钮从灰褐色改成接近黑（#191A17、#241F19），副文字从 #9A9A96 加深到 #6E6252。</div>
+  <div class="swatches">
+    <div class="sw"><i style="background:#F7F3EA"></i>页面 #F7F3EA</div>
+    <div class="sw"><i style="background:#191A17"></i>标题 #191A17</div>
+    <div class="sw"><i style="background:#F6EEDD"></i>阅读底 #F6EEDD</div>
+    <div class="sw"><i style="background:#241F19"></i>正文 #241F19</div>
+    <div class="sw"><i style="background:#2A6459"></i>强调 #2A6459</div>
+  </div>
+  <div class="phones">
+    <div class="phone-wrap">
+      <div class="phone" style="background:var(--app-bg);color:var(--app-text)">
+        <div class="lib">
+          <div class="lib-top">
+            <div><div class="lib-title">书架</div><div class="lib-count">12 本 · 全部在本地</div></div>
+            <div class="lib-icons">＋　⋮</div>
+          </div>
+          <div class="covers">
+            <div class="cover" style="background:linear-gradient(160deg,#3E5B52,#7FA892)">雨停之后<span class="badge">TXT</span><span class="bar" style="background:#7ECFB6;width:38%"></span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#5B4A63,#A896B5)">长夜将尽<span class="badge">EPUB</span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#6B4A3E,#B58F72)">山海旧事<span class="badge">TXT</span></div>
+          </div>
+          <div class="covers" style="margin-top:0">
+            <div><div class="b-name">雨停之后</div><div class="b-author">林晚</div></div>
+            <div><div class="b-name">长夜将尽</div><div class="b-author">周叙</div></div>
+            <div><div class="b-name">山海旧事</div><div class="b-author">佚名</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">书架</div>
+    </div>
+    <div class="phone-wrap">
+      <div class="phone" style="background:var(--rd-bg);color:var(--rd-text)">
+        <div class="read">
+          <div class="read-chapter" style="color:var(--rd-sub)">第 3 章　雨停之后</div>
+          <div class="read-body">
+            <p>雨是傍晚停的。石板路上积着薄薄一层水，映着店里漏出来的暖黄灯光。她把伞收起来抖了抖，水珠顺着伞骨滑到地上。</p>
+            <p>巷子很窄，两侧的屋檐几乎要碰在一起。走到尽头时，能听见远处电车经过的声响，闷闷的，像有人隔着墙在叹气。</p>
+            <p>「你来晚了。」他说。</p>
+            <p>她没有回答，只是把手里那袋还热着的东西放到桌上，纸袋被水汽浸得有些软。</p>
+          </div>
+          <div class="status" style="color:var(--rd-sub)"><span>21:06　87%</span><span>3/28　12%</span></div>
+          <div class="slider" style="background:rgba(0,0,0,.10)"><b style="width:12%;background:var(--rd-sub)"></b></div>
+          <div class="toolbar" style="border-color:var(--rd-line);color:var(--rd-text)">
+            <div class="tool"><span class="ic">‹</span>上一章</div>
+            <div class="tool"><span class="ic">☰</span>目录</div>
+            <div class="tool"><span class="ic">›</span>下一章</div>
+            <div class="tool"><span class="ic">🎧</span>听书</div>
+            <div class="tool"><span class="ic">Aa</span>设置</div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">阅读页（含工具栏按钮字色）</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2 墨绿 ============ -->
+<div class="card" style="
+  --app-bg:#151A14; --app-surface:#1C2219; --app-text:#E6EADF; --app-sub:#9BA491; --app-accent:#86B06A;
+  --rd-bg:#1B211A; --rd-text:#DFE5D3; --rd-sub:#8C9681; --rd-line:#2B3327;">
+  <div class="card-head"><div class="name">② 墨绿</div><div class="tag">暗色 · 护眼</div></div>
+  <div class="desc">照你给的夸克那张图取色：深橄榄绿底、微带绿意的米白字，长时间看不刺眼。正文对比度约 10:1。</div>
+  <div class="swatches">
+    <div class="sw"><i style="background:#151A14"></i>页面 #151A14</div>
+    <div class="sw"><i style="background:#E6EADF"></i>标题 #E6EADF</div>
+    <div class="sw"><i style="background:#1B211A"></i>阅读底 #1B211A</div>
+    <div class="sw"><i style="background:#DFE5D3"></i>正文 #DFE5D3</div>
+    <div class="sw"><i style="background:#86B06A"></i>强调 #86B06A</div>
+  </div>
+  <div class="phones">
+    <div class="phone-wrap">
+      <div class="phone" style="background:var(--app-bg);color:var(--app-text)">
+        <div class="lib">
+          <div class="lib-top">
+            <div><div class="lib-title">书架</div><div class="lib-count">12 本 · 全部在本地</div></div>
+            <div class="lib-icons">＋　⋮</div>
+          </div>
+          <div class="covers">
+            <div class="cover" style="background:linear-gradient(160deg,#2C3A2C,#4C6647)">雨停之后<span class="badge">TXT</span><span class="bar" style="background:#86B06A;width:38%"></span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#3A2F3E,#5D4A63)">长夜将尽<span class="badge">EPUB</span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#3E3228,#6A5741)">山海旧事<span class="badge">TXT</span></div>
+          </div>
+          <div class="covers" style="margin-top:0">
+            <div><div class="b-name">雨停之后</div><div class="b-author">林晚</div></div>
+            <div><div class="b-name">长夜将尽</div><div class="b-author">周叙</div></div>
+            <div><div class="b-name">山海旧事</div><div class="b-author">佚名</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">书架</div>
+    </div>
+    <div class="phone-wrap">
+      <div class="phone" style="background:linear-gradient(175deg,#20271D,#171C16 62%,#141A15);color:var(--rd-text)">
+        <div class="read">
+          <div class="read-chapter" style="color:var(--rd-sub)">第 3 章　雨停之后</div>
+          <div class="read-body">
+            <p>雨是傍晚停的。石板路上积着薄薄一层水，映着店里漏出来的暖黄灯光。她把伞收起来抖了抖，水珠顺着伞骨滑到地上。</p>
+            <p>巷子很窄，两侧的屋檐几乎要碰在一起。走到尽头时，能听见远处电车经过的声响，闷闷的，像有人隔着墙在叹气。</p>
+            <p>「你来晚了。」他说。</p>
+            <p>她没有回答，只是把手里那袋还热着的东西放到桌上，纸袋被水汽浸得有些软。</p>
+          </div>
+          <div class="status" style="color:var(--rd-sub)"><span>21:06　87%</span><span>3/28　12%</span></div>
+          <div class="slider" style="background:rgba(255,255,255,.10)"><b style="width:12%;background:#86B06A"></b></div>
+          <div class="toolbar" style="border-color:var(--rd-line);color:var(--rd-text)">
+            <div class="tool"><span class="ic">‹</span>上一章</div>
+            <div class="tool"><span class="ic">☰</span>目录</div>
+            <div class="tool"><span class="ic">›</span>下一章</div>
+            <div class="tool"><span class="ic">🎧</span>听书</div>
+            <div class="tool"><span class="ic">Aa</span>设置</div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">阅读页（含工具栏按钮字色）</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3 暗粉 ============ -->
+<div class="card" style="
+  --app-bg:#1A1416; --app-surface:#221A1D; --app-text:#F1E1E5; --app-sub:#B2969E; --app-accent:#D98BA0;
+  --rd-bg:#1F1719; --rd-text:#EEDCE0; --rd-sub:#A98A93; --rd-line:#31262A;">
+  <div class="card-head"><div class="name">③ 暗粉</div><div class="tag">暗色</div></div>
+  <div class="desc">深梅子底 + 米粉字，偏暖，不甜腻。强调色用灰粉，图标和进度条不抢正文。</div>
+  <div class="swatches">
+    <div class="sw"><i style="background:#1A1416"></i>页面 #1A1416</div>
+    <div class="sw"><i style="background:#F1E1E5"></i>标题 #F1E1E5</div>
+    <div class="sw"><i style="background:#1F1719"></i>阅读底 #1F1719</div>
+    <div class="sw"><i style="background:#EEDCE0"></i>正文 #EEDCE0</div>
+    <div class="sw"><i style="background:#D98BA0"></i>强调 #D98BA0</div>
+  </div>
+  <div class="phones">
+    <div class="phone-wrap">
+      <div class="phone" style="background:var(--app-bg);color:var(--app-text)">
+        <div class="lib">
+          <div class="lib-top">
+            <div><div class="lib-title">书架</div><div class="lib-count">12 本 · 全部在本地</div></div>
+            <div class="lib-icons">＋　⋮</div>
+          </div>
+          <div class="covers">
+            <div class="cover" style="background:linear-gradient(160deg,#4A2C36,#7C4B5B)">雨停之后<span class="badge">TXT</span><span class="bar" style="background:#D98BA0;width:38%"></span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#3C2A3E,#6A4A6E)">长夜将尽<span class="badge">EPUB</span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#43322C,#79574A)">山海旧事<span class="badge">TXT</span></div>
+          </div>
+          <div class="covers" style="margin-top:0">
+            <div><div class="b-name">雨停之后</div><div class="b-author">林晚</div></div>
+            <div><div class="b-name">长夜将尽</div><div class="b-author">周叙</div></div>
+            <div><div class="b-name">山海旧事</div><div class="b-author">佚名</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">书架</div>
+    </div>
+    <div class="phone-wrap">
+      <div class="phone" style="background:linear-gradient(175deg,#241A1D,#1B1416 65%);color:var(--rd-text)">
+        <div class="read">
+          <div class="read-chapter" style="color:var(--rd-sub)">第 3 章　雨停之后</div>
+          <div class="read-body">
+            <p>雨是傍晚停的。石板路上积着薄薄一层水，映着店里漏出来的暖黄灯光。她把伞收起来抖了抖，水珠顺着伞骨滑到地上。</p>
+            <p>巷子很窄，两侧的屋檐几乎要碰在一起。走到尽头时，能听见远处电车经过的声响，闷闷的，像有人隔着墙在叹气。</p>
+            <p>「你来晚了。」他说。</p>
+            <p>她没有回答，只是把手里那袋还热着的东西放到桌上，纸袋被水汽浸得有些软。</p>
+          </div>
+          <div class="status" style="color:var(--rd-sub)"><span>21:06　87%</span><span>3/28　12%</span></div>
+          <div class="slider" style="background:rgba(255,255,255,.10)"><b style="width:12%;background:#D98BA0"></b></div>
+          <div class="toolbar" style="border-color:var(--rd-line);color:var(--rd-text)">
+            <div class="tool"><span class="ic">‹</span>上一章</div>
+            <div class="tool"><span class="ic">☰</span>目录</div>
+            <div class="tool"><span class="ic">›</span>下一章</div>
+            <div class="tool"><span class="ic">🎧</span>听书</div>
+            <div class="tool"><span class="ic">Aa</span>设置</div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">阅读页（含工具栏按钮字色）</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4 墨蓝 ============ -->
+<div class="card" style="
+  --app-bg:#12161C; --app-surface:#191F27; --app-text:#DFE6EF; --app-sub:#95A2B3; --app-accent:#7CA0CF;
+  --rd-bg:#161B22; --rd-text:#D9E2EC; --rd-sub:#8B98A8; --rd-line:#232C36;">
+  <div class="card-head"><div class="name">④ 墨蓝</div><div class="tag">暗色 · 冷调</div></div>
+  <div class="desc">深藏青底 + 冷白字。比墨绿更"干净"，夜里看白字不泛黄。</div>
+  <div class="swatches">
+    <div class="sw"><i style="background:#12161C"></i>页面 #12161C</div>
+    <div class="sw"><i style="background:#DFE6EF"></i>标题 #DFE6EF</div>
+    <div class="sw"><i style="background:#161B22"></i>阅读底 #161B22</div>
+    <div class="sw"><i style="background:#D9E2EC"></i>正文 #D9E2EC</div>
+    <div class="sw"><i style="background:#7CA0CF"></i>强调 #7CA0CF</div>
+  </div>
+  <div class="phones">
+    <div class="phone-wrap">
+      <div class="phone" style="background:var(--app-bg);color:var(--app-text)">
+        <div class="lib">
+          <div class="lib-top">
+            <div><div class="lib-title">书架</div><div class="lib-count">12 本 · 全部在本地</div></div>
+            <div class="lib-icons">＋　⋮</div>
+          </div>
+          <div class="covers">
+            <div class="cover" style="background:linear-gradient(160deg,#26333F,#41637D)">雨停之后<span class="badge">TXT</span><span class="bar" style="background:#7CA0CF;width:38%"></span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#2E2A40,#544A72)">长夜将尽<span class="badge">EPUB</span></div>
+            <div class="cover" style="background:linear-gradient(160deg,#33352C,#5E6250)">山海旧事<span class="badge">TXT</span></div>
+          </div>
+          <div class="covers" style="margin-top:0">
+            <div><div class="b-name">雨停之后</div><div class="b-author">林晚</div></div>
+            <div><div class="b-name">长夜将尽</div><div class="b-author">周叙</div></div>
+            <div><div class="b-name">山海旧事</div><div class="b-author">佚名</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">书架</div>
+    </div>
+    <div class="phone-wrap">
+      <div class="phone" style="background:linear-gradient(175deg,#1B222B,#141A21 65%);color:var(--rd-text)">
+        <div class="read">
+          <div class="read-chapter" style="color:var(--rd-sub)">第 3 章　雨停之后</div>
+          <div class="read-body">
+            <p>雨是傍晚停的。石板路上积着薄薄一层水，映着店里漏出来的暖黄灯光。她把伞收起来抖了抖，水珠顺着伞骨滑到地上。</p>
+            <p>巷子很窄，两侧的屋檐几乎要碰在一起。走到尽头时，能听见远处电车经过的声响，闷闷的，像有人隔着墙在叹气。</p>
+            <p>「你来晚了。」他说。</p>
+            <p>她没有回答，只是把手里那袋还热着的东西放到桌上，纸袋被水汽浸得有些软。</p>
+          </div>
+          <div class="status" style="color:var(--rd-sub)"><span>21:06　87%</span><span>3/28　12%</span></div>
+          <div class="slider" style="background:rgba(255,255,255,.10)"><b style="width:12%;background:#7CA0CF"></b></div>
+          <div class="toolbar" style="border-color:var(--rd-line);color:var(--rd-text)">
+            <div class="tool"><span class="ic">‹</span>上一章</div>
+            <div class="tool"><span class="ic">☰</span>目录</div>
+            <div class="tool"><span class="ic">›</span>下一章</div>
+            <div class="tool"><span class="ic">🎧</span>听书</div>
+            <div class="tool"><span class="ic">Aa</span>设置</div>
+          </div>
+        </div>
+      </div>
+      <div class="phone-label">阅读页（含工具栏按钮字色）</div>
+    </div>
+  </div>
+</div>
+
+<div class="sub" style="margin-top:6px">皮肤会统一管住：书架背景 / 卡片文字 / 按钮 / 阅读页 / 工具栏 / 目录与设置面板 / 弹窗。<br>切换入口放在首页右上角 ⋮ → 检查更新 下面。</div>
+
+</body>
+</html>

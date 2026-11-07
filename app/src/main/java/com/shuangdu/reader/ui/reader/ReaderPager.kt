@@ -35,14 +35,14 @@ import kotlinx.coroutines.launch
 private const val TAP_ZONE_EDGE = 0.30f
 
 /**
- * 翻页容器。自己实现拖动 + 回弹：
- * 临近章末时邻居章的首页已经排好版，位移完全连续，不会出现翻到章末卡一下再跳章。
+ * 翻页容器。自己实现拖动 + 回弹：临近章末时邻居章的首页已经排好版，
+ * 位移完全连续，不会出现翻到章末卡一下再跳章。
  */
 @Composable
 fun ReaderPager(
     engine: ReaderEngine,
     pageAnim: PageAnim,
-    background: Color,
+    bgBrush: Brush,
     onTurnForward: () -> Boolean,
     onTurnBackward: () -> Boolean,
     onTapCenter: () -> Unit,
@@ -72,7 +72,6 @@ fun ReaderPager(
         return pv to (layout.pageCount - 1).coerceAtLeast(0)
     }
 
-    /** 松手后决定：翻过去，还是弹回来 */
     fun settle(velocity: Float) {
         scope.launch {
             val start = dragValue
@@ -100,10 +99,7 @@ fun ReaderPager(
 
                 else -> {
                     if (start != 0f) {
-                        anim.animateTo(
-                            0f,
-                            spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)
-                        )
+                        anim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow))
                     }
                 }
             }
@@ -170,66 +166,81 @@ fun ReaderPager(
                 onDragStopped = { velocity -> settle(velocity) }
             )
     ) {
-        drawRect(background)
-        val off = if (dragging) dragValue else anim.value
-        val curLayout = engine.layouts[engine.chapterIndex]
-        val curPage = engine.page
+        drawRect(brush = bgBrush)
 
-        fun paint(chapter: Int, page: Int, dx: Float) {
-            val layout = engine.layouts[chapter] ?: return
+        val off = if (dragging) dragValue else anim.value
+        val w = size.width
+        val h = size.height
+        val coverMode = pageAnim == PageAnim.COVER
+
+        fun paint(chapter: Int, page: Int, dx: Float, opaque: Boolean) {
+            val src = engine.layouts[chapter] ?: return
+            if (opaque) {
+                // 上一页必须有自己的不透明底，否则文字会透到下一页上形成拖影
+                drawRect(brush = bgBrush, topLeft = Offset(dx, 0f), size = Size(w, h))
+            }
             drawIntoCanvas { canvas ->
                 val nc = canvas.nativeCanvas
                 val save = nc.save()
                 nc.translate(dx, 0f)
-                layout.drawPage(nc, page)
+                nc.clipRect(0, 0, w.toInt(), h.toInt())
+                src.drawPage(nc, page)
                 nc.restoreToCount(save)
             }
         }
 
         fun edgeShadow(dx: Float) {
-            val w = 26f
+            val sw = 26f
             drawRect(
                 brush = Brush.horizontalGradient(
                     colors = listOf(Color.Black.copy(alpha = 0.16f), Color.Transparent),
                     startX = dx,
-                    endX = dx + w
+                    endX = dx + sw
                 ),
                 topLeft = Offset(dx, 0f),
-                size = Size(w, size.height)
+                size = Size(sw, h)
             )
         }
 
-        val w = size.width
         when (pageAnim) {
-            PageAnim.SLIDE -> {
-                if (off < -0.5f) forwardPage()?.let { (c, p) -> paint(c, p, off + w) }
-                if (off > 0.5f) backwardPage()?.let { (c, p) -> paint(c, p, off - w) }
-                if (curLayout != null) paint(engine.chapterIndex, curPage, off)
-            }
-
             PageAnim.COVER -> {
                 when {
                     off < -0.5f -> {
-                        forwardPage()?.let { (c, p) -> paint(c, p, 0f) }
-                        if (curLayout != null) {
-                            paint(engine.chapterIndex, curPage, off)
+                        forwardPage()?.let { (c, p) -> paint(c, p, 0f, true) }
+                        val cur = engine.layouts[engine.chapterIndex]
+                        if (cur != null) {
+                            paint(engine.chapterIndex, engine.page, off, true)
                             edgeShadow(off + w - 26f)
                         }
                     }
 
                     off > 0.5f -> {
-                        if (curLayout != null) paint(engine.chapterIndex, curPage, 0f)
+                        val cur = engine.layouts[engine.chapterIndex]
+                        if (cur != null) paint(engine.chapterIndex, engine.page, 0f, true)
                         backwardPage()?.let { (c, p) ->
-                            paint(c, p, off - w)
+                            paint(c, p, off - w, true)
                             edgeShadow(off - 26f)
                         }
                     }
 
-                    else -> if (curLayout != null) paint(engine.chapterIndex, curPage, 0f)
+                    else -> {
+                        val cur = engine.layouts[engine.chapterIndex]
+                        if (cur != null) paint(engine.chapterIndex, engine.page, 0f, false)
+                    }
                 }
             }
 
-            PageAnim.NONE -> if (curLayout != null) paint(engine.chapterIndex, curPage, 0f)
+            PageAnim.NONE -> {
+                val cur = engine.layouts[engine.chapterIndex]
+                if (cur != null) paint(engine.chapterIndex, engine.page, 0f, false)
+            }
+
+            else -> {
+                if (off < -0.5f) forwardPage()?.let { (c, p) -> paint(c, p, off + w, false) }
+                if (off > 0.5f) backwardPage()?.let { (c, p) -> paint(c, p, off - w, false) }
+                val cur = engine.layouts[engine.chapterIndex]
+                if (cur != null) paint(engine.chapterIndex, engine.page, off, false)
+            }
         }
     }
 }

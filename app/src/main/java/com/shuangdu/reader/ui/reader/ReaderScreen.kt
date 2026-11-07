@@ -12,12 +12,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -30,15 +32,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBackIosNew
-import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,10 +58,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -71,8 +77,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuangdu.reader.AppContainer
+import com.shuangdu.reader.data.PageAnim
 import com.shuangdu.reader.data.ReadFont
-import com.shuangdu.reader.ui.theme.ReadPalette
+import com.shuangdu.reader.ui.theme.SkinPalette
 import com.shuangdu.reader.ui.theme.paletteOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -99,9 +106,10 @@ fun ReaderScreen(
         ReaderEngine(book.chapterIndex).apply { setChapters(chapters.map { it.title }) }
     }
     val settings by container.settings.state.collectAsStateWithLifecycle()
-    val palette = paletteOf(settings.theme)
+    val pal = paletteOf(settings.skin)
     val density = LocalDensity.current
     val view = LocalView.current
+    val scope = rememberCoroutineScope()
 
     var anchor by remember(bookId) { mutableIntStateOf(book.charOffset) }
     var showUi by remember { mutableStateOf(false) }
@@ -115,13 +123,13 @@ fun ReaderScreen(
     val bottomPad = navBar + if (settings.showStatus) 24.dp else 10.dp
 
     val style: PageStyle? = remember(
-        textArea, settings.fontSize, settings.lineSpacing, settings.font, settings.indent, palette
+        textArea, settings.fontSize, settings.lineSpacing, settings.font, settings.indent, pal
     ) {
         if (textArea.width <= 0) null else PageStyle(
             textSizePx = with(density) { settings.fontSize.sp.toPx() },
             lineSpacingMult = settings.lineSpacing,
             typeface = typefaceOf(settings.font),
-            color = palette.text.toArgb(),
+            color = pal.readText.toArgb(),
             widthPx = textArea.width,
             indent = settings.indent
         )
@@ -142,19 +150,23 @@ fun ReaderScreen(
         val center = engine.chapterIndex
         val h = textArea.height
         val built = withContext(Dispatchers.Default) {
-            val out = ArrayList<Triple<Int, String, PaginatedChapter>>(3)
+            val out = ArrayList<Triple<Int, String, PageSource>>(3)
             for (i in (center - 1)..(center + 1)) {
                 if (i < 0 || i >= chapters.size) continue
                 if (engine.layouts[i] != null) continue
                 val text = engine.textOf(i) ?: repo.readChapter(book, i)
                 if (text.isEmpty() && i != center) continue
-                out.add(Triple(i, text, PaginatedChapter.build(text, st, h)))
+                val blocked = BlockedChapter.build(text, st, h) { idx ->
+                    repo.loadChapterImage(book, idx.toString(), st.widthPx)
+                }
+                val src: PageSource = blocked ?: PaginatedChapter.build(text, st, h)
+                out.add(Triple(i, text, src))
             }
             out
         }
-        built.forEach { (i, text, layout) ->
+        built.forEach { (i, text, src) ->
             engine.putText(i, text)
-            engine.putLayout(i, layout)
+            engine.putLayout(i, src)
         }
         engine.page = engine.current?.pageOfCharOffset(anchor) ?: 0
         anchor = engine.charOffsetNow()
@@ -199,6 +211,13 @@ fun ReaderScreen(
         return true
     }
 
+    fun nextChapter() {
+        val nx = engine.chapterIndex + 1
+        if (nx >= chapters.size) return
+        anchor = 0
+        engine.moveToChapter(nx, 0)
+    }
+
     fun jumpToChapter(index: Int) {
         if (index !in chapters.indices) return
         showChapters = false
@@ -206,7 +225,6 @@ fun ReaderScreen(
         engine.moveToChapter(index, 0)
     }
 
-    // 进度落盘
     LaunchedEffect(engine.chapterIndex, engine.page) {
         delay(700)
         persistProgress()
@@ -231,28 +249,41 @@ fun ReaderScreen(
         }
     }
 
-    Box(Modifier.fillMaxSize().background(palette.bg)) {
+    val bgBrush = remember(pal) {
+        Brush.verticalGradient(listOf(pal.readBg, pal.readBg2))
+    }
+
+    Box(Modifier.fillMaxSize().background(bgBrush)) {
         Box(
             Modifier
                 .fillMaxSize()
                 .padding(start = settings.marginH.dp, end = settings.marginH.dp, top = topPad, bottom = bottomPad)
                 .onSizeChanged { textArea = it }
         ) {
-            ReaderPager(
-                engine = engine,
-                pageAnim = settings.pageAnim,
-                background = palette.bg,
-                onTurnForward = { goNext() },
-                onTurnBackward = { goPrev() },
-                onTapCenter = { showUi = !showUi }
-            )
+            if (settings.pageAnim == PageAnim.SCROLL) {
+                ScrollReader(
+                    engine = engine,
+                    pageHeightPx = textArea.height,
+                    hasNextChapter = engine.chapterIndex + 1 < chapters.size,
+                    onTapCenter = { showUi = !showUi },
+                    onNextChapter = { nextChapter() }
+                )
+            } else {
+                ReaderPager(
+                    engine = engine,
+                    pageAnim = settings.pageAnim,
+                    bgBrush = bgBrush,
+                    onTurnForward = { goNext() },
+                    onTurnBackward = { goPrev() },
+                    onTapCenter = { showUi = !showUi }
+                )
+            }
         }
 
-        // 顶部章节名
         if (settings.showChapterTitle && !showUi) {
             Text(
                 text = engine.titleOf(engine.chapterIndex).ifBlank { book.title },
-                color = palette.sub,
+                color = pal.readSub,
                 fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -262,10 +293,9 @@ fun ReaderScreen(
             )
         }
 
-        // 底部时间电量进度
         if (settings.showStatus && !showUi) {
             ReaderStatusLine(
-                palette = palette,
+                pal = pal,
                 engine = engine,
                 total = chapters.size,
                 modifier = Modifier
@@ -279,7 +309,7 @@ fun ReaderScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(26.dp),
-                    color = palette.sub,
+                    color = pal.readSub,
                     strokeWidth = 2.dp
                 )
             }
@@ -287,11 +317,10 @@ fun ReaderScreen(
 
         engine.error?.let { err ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(err, color = palette.sub, fontSize = 14.sp)
+                Text(err, color = pal.readSub, fontSize = 14.sp)
             }
         }
 
-        // 工具栏
         AnimatedVisibility(
             visible = showUi,
             enter = fadeIn() + slideInVertically { -it / 4 },
@@ -299,7 +328,7 @@ fun ReaderScreen(
         ) {
             Column(Modifier.fillMaxSize()) {
                 ReaderTopBar(
-                    palette = palette,
+                    pal = pal,
                     title = book.title,
                     chapter = engine.titleOf(engine.chapterIndex),
                     onBack = {
@@ -314,7 +343,7 @@ fun ReaderScreen(
                         .pointerInput(Unit) { detectTapGestures { showUi = false } }
                 )
                 ReaderBottomBar(
-                    palette = palette,
+                    pal = pal,
                     chapterIndex = engine.chapterIndex,
                     total = chapters.size,
                     onChapters = { showChapters = true },
@@ -346,6 +375,74 @@ fun ReaderScreen(
     }
 }
 
+/** 上下滑动模式：一页一个块，竖向连续滚，滚到底点「下一章」 */
+@Composable
+private fun ScrollReader(
+    engine: ReaderEngine,
+    pageHeightPx: Int,
+    hasNextChapter: Boolean,
+    onTapCenter: () -> Unit,
+    onNextChapter: () -> Unit
+) {
+    val pages = engine.currentPageCount()
+    val listState = rememberLazyListState()
+    val density = LocalDensity.current
+
+    LaunchedEffect(engine.chapterIndex) {
+        if (listState.firstVisibleItemIndex != 0) listState.scrollToItem(0)
+    }
+    LaunchedEffect(listState, pages) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { idx ->
+            if (idx in 0 until pages && idx != engine.page) {
+                engine.page = idx
+            }
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize().pointerInput(Unit) {
+            detectTapGestures { onTapCenter() }
+        },
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        items(pages) { i ->
+            val src = engine.current
+            Canvas(
+                Modifier
+                    .fillMaxWidth()
+                    .height(with(density) { pageHeightPx.toDp() })
+            ) {
+                drawIntoCanvas {
+                    it.nativeCanvas.save()
+                    src?.drawPage(it.nativeCanvas, i)
+                    it.nativeCanvas.restore()
+                }
+            }
+        }
+        item {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 26.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (hasNextChapter) {
+                    Text(
+                        "下一章",
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .clickable { onNextChapter() }
+                            .padding(horizontal = 22.dp, vertical = 10.dp)
+                    )
+                } else {
+                    Text("已经是最后一章了", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
 private fun typefaceOf(font: ReadFont): Typeface = when (font) {
     ReadFont.SYSTEM -> Typeface.create("sans-serif", Typeface.NORMAL)
     ReadFont.SERIF -> Typeface.create("serif", Typeface.NORMAL)
@@ -354,7 +451,7 @@ private fun typefaceOf(font: ReadFont): Typeface = when (font) {
 
 @Composable
 private fun ReaderStatusLine(
-    palette: ReadPalette,
+    pal: SkinPalette,
     engine: ReaderEngine,
     total: Int,
     modifier: Modifier = Modifier
@@ -396,25 +493,25 @@ private fun ReaderStatusLine(
     }
 
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Text(time, color = palette.sub, fontSize = 10.5.sp)
+        Text(time, color = pal.readSub, fontSize = 10.5.sp)
         Spacer(Modifier.width(10.dp))
         if (battery >= 0) {
-            Text("$battery%", color = palette.sub, fontSize = 10.5.sp)
+            Text("$battery%", color = pal.readSub, fontSize = 10.5.sp)
         }
         Spacer(Modifier.weight(1f))
         Text(
             "${engine.chapterIndex + 1}/${total.coerceAtLeast(1)}",
-            color = palette.sub,
+            color = pal.readSub,
             fontSize = 10.5.sp
         )
         Spacer(Modifier.width(8.dp))
-        Text("$percent%", color = palette.sub, fontSize = 10.5.sp)
+        Text("$percent%", color = pal.readSub, fontSize = 10.5.sp)
     }
 }
 
 @Composable
 private fun ReaderTopBar(
-    palette: ReadPalette,
+    pal: SkinPalette,
     title: String,
     chapter: String,
     onBack: () -> Unit
@@ -423,17 +520,17 @@ private fun ReaderTopBar(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(palette.bg)
+            .background(pal.readBg)
             .padding(top = statusBar + 4.dp, bottom = 10.dp, start = 6.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.Rounded.ArrowBackIosNew, "返回", tint = palette.text, modifier = Modifier.size(19.dp))
+            Icon(Icons.Rounded.ArrowBackIosNew, "返回", tint = pal.readText, modifier = Modifier.size(19.dp))
         }
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
             Text(
                 title,
-                color = palette.text,
+                color = pal.readText,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -441,7 +538,7 @@ private fun ReaderTopBar(
             )
             Text(
                 chapter,
-                color = palette.sub,
+                color = pal.readSub,
                 fontSize = 11.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -452,7 +549,7 @@ private fun ReaderTopBar(
 
 @Composable
 private fun ReaderBottomBar(
-    palette: ReadPalette,
+    pal: SkinPalette,
     chapterIndex: Int,
     total: Int,
     onChapters: () -> Unit,
@@ -468,7 +565,7 @@ private fun ReaderBottomBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(palette.bg)
+            .background(pal.readBg)
             .padding(bottom = navBar + 8.dp)
     ) {
         Row(
@@ -476,20 +573,20 @@ private fun ReaderBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ToolButton("上一章", palette, onPrev) {
-                Icon(Icons.Rounded.KeyboardArrowLeft, null, tint = palette.text, modifier = Modifier.size(24.dp))
+            ToolButton("上一章", pal, onPrev) {
+                Icon(Icons.Rounded.KeyboardArrowLeft, null, tint = pal.readText, modifier = Modifier.size(24.dp))
             }
-            ToolButton("目录", palette, onChapters) {
-                Icon(Icons.Rounded.Menu, null, tint = palette.text, modifier = Modifier.size(21.dp))
+            ToolButton("目录", pal, onChapters) {
+                Icon(Icons.Rounded.Menu, null, tint = pal.readText, modifier = Modifier.size(21.dp))
             }
-            ToolButton("下一章", palette, onNext) {
-                Icon(Icons.Rounded.KeyboardArrowRight, null, tint = palette.text, modifier = Modifier.size(24.dp))
+            ToolButton("下一章", pal, onNext) {
+                Icon(Icons.Rounded.KeyboardArrowRight, null, tint = pal.readText, modifier = Modifier.size(24.dp))
             }
-            ToolButton("听书", palette, onTts) {
-                Icon(Icons.Rounded.Headphones, null, tint = palette.text, modifier = Modifier.size(21.dp))
+            ToolButton("听书", pal, onTts) {
+                Icon(Icons.Rounded.Headphones, null, tint = pal.readText, modifier = Modifier.size(21.dp))
             }
-            ToolButton("字号", palette, onSettings) {
-                Icon(Icons.Rounded.FormatSize, null, tint = palette.text, modifier = Modifier.size(21.dp))
+            ToolButton("设置", pal, onSettings) {
+                Icon(Icons.Rounded.Tune, null, tint = pal.readText, modifier = Modifier.size(21.dp))
             }
         }
         Row(
@@ -502,16 +599,16 @@ private fun ReaderBottomBar(
                 onValueChangeFinished = { onSeek(sliderValue.toInt()) },
                 valueRange = 0f..(total - 1).coerceAtLeast(1).toFloat(),
                 colors = SliderDefaults.colors(
-                    thumbColor = palette.text,
-                    activeTrackColor = palette.text.copy(alpha = 0.55f),
-                    inactiveTrackColor = palette.text.copy(alpha = 0.18f)
+                    thumbColor = pal.readText,
+                    activeTrackColor = pal.readText.copy(alpha = 0.55f),
+                    inactiveTrackColor = pal.readText.copy(alpha = 0.18f)
                 ),
                 modifier = Modifier.weight(1f).height(24.dp)
             )
             Spacer(Modifier.width(10.dp))
             Text(
                 "${(chapterIndex + 1).coerceAtMost(total.coerceAtLeast(1))}/${total.coerceAtLeast(1)}",
-                color = palette.sub,
+                color = pal.readSub,
                 fontSize = 11.sp
             )
         }
@@ -519,7 +616,7 @@ private fun ReaderBottomBar(
 }
 
 @Composable
-private fun ToolButton(label: String, palette: ReadPalette, onClick: () -> Unit, icon: @Composable () -> Unit) {
+private fun ToolButton(label: String, pal: SkinPalette, onClick: () -> Unit, icon: @Composable () -> Unit) {
     Column(
         Modifier
             .clickable(onClick = onClick)
@@ -528,6 +625,6 @@ private fun ToolButton(label: String, palette: ReadPalette, onClick: () -> Unit,
     ) {
         Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) { icon() }
         Spacer(Modifier.height(3.dp))
-        Text(label, color = palette.sub, fontSize = 10.sp)
+        Text(label, color = pal.readSub, fontSize = 10.sp)
     }
 }

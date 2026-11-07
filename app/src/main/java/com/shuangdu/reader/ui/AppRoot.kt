@@ -6,13 +6,16 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,11 +23,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowCompat
 import com.shuangdu.reader.AppContainer
 import com.shuangdu.reader.data.ImportResult
 import com.shuangdu.reader.ui.library.LibraryScreen
 import com.shuangdu.reader.ui.reader.ReaderScreen
+import com.shuangdu.reader.ui.theme.SdTheme
+import com.shuangdu.reader.ui.theme.paletteOf
 import com.shuangdu.reader.ui.update.UpdateHost
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,6 +46,46 @@ sealed interface Route {
 
 @Composable
 fun AppRoot(container: AppContainer, pendingOpen: MutableState<Uri?>) {
+    val settings by container.settings.state.collectAsStateWithLifecycle()
+    SdTheme(settings.skin) {
+        SystemBars(settings.skin.isDark, paletteOf(settings.skin).appBg)
+        AppRootContent(container, pendingOpen)
+    }
+}
+
+/** 状态栏/导航栏跟着皮肤走：透明底 + 深浅图标，顺手把窗口底色也换掉避免闪白 */
+@Composable
+private fun SystemBars(dark: Boolean, bg: androidx.compose.ui.graphics.Color) {
+    val view = LocalView.current
+    val context = LocalContext.current
+    SideEffect {
+        val activity = context.findActivity() ?: return@SideEffect
+        val window = activity.window
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        window.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(bg.toArgb())
+        )
+        runCatching {
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
+    }
+}
+
+private fun android.content.Context.findActivity(): android.app.Activity? {
+    var ctx: android.content.Context? = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is android.app.Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
+
+@Composable
+private fun AppRootContent(container: AppContainer, pendingOpen: MutableState<Uri?>) {
     var route by remember { mutableStateOf<Route>(Route.Library) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -88,7 +138,11 @@ fun AppRoot(container: AppContainer, pendingOpen: MutableState<Uri?>) {
         importAndOpen(listOf(uri))
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         AnimatedContent(
             targetState = route,
             transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },

@@ -16,7 +16,8 @@ object EpubParser {
         val title: String,
         val author: String,
         val cover: ByteArray?,
-        val chapters: List<ChapterSplitter.Split>
+        val chapters: List<ChapterSplitter.Split>,
+        val images: List<ByteArray> = emptyList()
     )
 
     fun parse(file: File): Result {
@@ -78,14 +79,16 @@ object EpubParser {
                 .ifEmpty { manifest.values.filter { it.mediaType.contains("html", true) }.sortedBy { it.id } }
 
             val chapters = ArrayList<ChapterSplitter.Split>()
+            val images = ArrayList<ByteArray>()
+            val imageIndex = HashMap<String, Int>()
             var index = 1
             for (item in chapterFiles) {
                 val entry = findEntry(zip, item.href) ?: continue
                 val html = runCatching {
                     zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
                 }.getOrNull() ?: continue
-                val text = htmlToText(html)
-                if (text.length < 2) continue
+                val text = htmlToBlocks(html, zip, item.href.substringBeforeLast('/', ""), images, imageIndex)
+                if (text.replace("\u0001", "").replace(Regex("\\d"), "").isBlank()) continue
                 val heading = firstHeading(html)
                 val chapterTitle = tocTitles[item.href]
                     ?: tocTitles.entries.firstOrNull { sameFile(it.key, item.href) }?.value
@@ -101,7 +104,8 @@ object EpubParser {
                 title = title.trim(),
                 author = author,
                 cover = coverBytes,
-                chapters = chapters
+                chapters = chapters,
+                images = images
             )
         }
     }
@@ -255,6 +259,38 @@ object EpubParser {
             i++
         }
         return out.toString()
+    }
+
+    /** XHTML -> 纯文本，保留段落结构，并把 <img> 换成图片占位标记 */
+    private fun htmlToBlocks(
+        html: String,
+        zip: ZipFile,
+        baseDir: String,
+        images: MutableList<ByteArray>,
+        indexByPath: MutableMap<String, Int>
+    ): String {
+        var s = html
+        if (s.contains("<img", true) || s.contains("<image", true)) {
+            val imgRegex = Regex(
+                "<(?:img|image)[^>]*?(?:src|xlink:href|href)\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>",
+                RegexOption.IGNORE_CASE
+            )
+            s = imgRegex.replace(s) { m ->
+                val path = resolvePath(baseDir, m.groupValues[1])
+                val idx = indexByPath.getOrPut(path) {
+                    val entry = findEntry(zip, path)
+                    val bytes = if (entry != null) {
+                        runCatching { zip.getInputStream(entry).use { it.readBytes() } }.getOrNull()
+                    } else null
+                    if (bytes != null && bytes.size > 512) {
+                        images.add(bytes)
+                        images.size - 1
+                    } else -1
+                }
+                if (idx >= 0) "\n\u0001$idx\u0001\n" else ""
+            }
+        }
+        return htmlToText(s)
     }
 
     /** XHTML -> 纯文本，保留段落结构 */

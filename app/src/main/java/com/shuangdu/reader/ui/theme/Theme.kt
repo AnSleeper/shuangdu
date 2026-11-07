@@ -1,6 +1,5 @@
 package com.shuangdu.reader.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -10,43 +9,132 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.shuangdu.reader.data.ReadTheme
+import com.shuangdu.reader.data.Skin
 
-val Ink = Color(0xFF1B1D1E)
-val Teal = Color(0xFF2E6F62)
-val TealLight = Color(0xFF4C9A88)
-val Paper = Color(0xFFF7F1E6)
+/** 皮肤色板：一套管住书架、面板、弹窗、阅读页 */
+class SkinPalette(
+    val skin: Skin,
+    val appBg: Color,
+    val surface: Color,
+    val surfaceVariant: Color,
+    val text: Color,
+    val sub: Color,
+    val primary: Color,
+    val onPrimary: Color,
+    val primaryContainer: Color,
+    val onPrimaryContainer: Color,
+    val outline: Color,
+    val readBg: Color,
+    val readBg2: Color,
+    val readText: Color,
+    val readSub: Color,
+    val readLine: Color
+) {
+    val isDark: Boolean get() = skin.isDark
+}
 
-private val LightScheme = lightColorScheme(
-    primary = Teal,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFE3F0EB),
-    onPrimaryContainer = Color(0xFF10332C),
-    secondary = Color(0xFF8A6D4B),
-    onSecondary = Color.White,
-    background = Color(0xFFFAF8F4),
-    onBackground = Ink,
+private val PAPER = SkinPalette(
+    skin = Skin.PAPER,
+    appBg = Color(0xFFF7F3EA),
     surface = Color(0xFFFFFFFF),
-    onSurface = Ink,
-    surfaceVariant = Color(0xFFF0ECE4),
-    onSurfaceVariant = Color(0xFF5B5B58),
-    outline = Color(0xFFD8D2C7)
+    surfaceVariant = Color(0xFFEFEAE0),
+    text = Color(0xFF191A17),
+    sub = Color(0xFF57534B),
+    primary = Color(0xFF2A6459),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFE1EEE8),
+    onPrimaryContainer = Color(0xFF10332C),
+    outline = Color(0xFFD9D2C4),
+    readBg = Color(0xFFF6EEDD),
+    readBg2 = Color(0xFFF1E7D2),
+    readText = Color(0xFF241F19),
+    readSub = Color(0xFF6E6252),
+    readLine = Color(0x33A08B65)
 )
 
-private val DarkScheme = darkColorScheme(
-    primary = TealLight,
-    onPrimary = Color(0xFF06211C),
-    primaryContainer = Color(0xFF1D3B35),
-    onPrimaryContainer = Color(0xFFC7E6DD),
-    secondary = Color(0xFFD3B995),
-    background = Color(0xFF101213),
-    onBackground = Color(0xFFE9E6E1),
-    surface = Color(0xFF171A1B),
-    onSurface = Color(0xFFE9E6E1),
-    surfaceVariant = Color(0xFF232728),
-    onSurfaceVariant = Color(0xFFB0B4B3),
-    outline = Color(0xFF33393A)
+private val INK_GREEN = SkinPalette(
+    skin = Skin.INK_GREEN,
+    appBg = Color(0xFF151A14),
+    surface = Color(0xFF1C2219),
+    surfaceVariant = Color(0xFF222A1E),
+    text = Color(0xFFE6EADF),
+    sub = Color(0xFF9BA491),
+    primary = Color(0xFF86B06A),
+    onPrimary = Color(0xFF10200C),
+    primaryContainer = Color(0xFF26321E),
+    onPrimaryContainer = Color(0xFFD6E6C8),
+    outline = Color(0xFF2B3327),
+    readBg = Color(0xFF1F251C),
+    readBg2 = Color(0xFF171C16),
+    readText = Color(0xFFDFE5D3),
+    readSub = Color(0xFF8C9681),
+    readLine = Color(0x3386B06A)
 )
+
+private val DUSK_PINK = SkinPalette(
+    skin = Skin.DUSK_PINK,
+    appBg = Color(0xFF1A1416),
+    surface = Color(0xFF221A1D),
+    surfaceVariant = Color(0xFF2A2024),
+    text = Color(0xFFF1E1E5),
+    sub = Color(0xFFB2969E),
+    primary = Color(0xFFD98BA0),
+    onPrimary = Color(0xFF2A1016),
+    primaryContainer = Color(0xFF3A2529),
+    onPrimaryContainer = Color(0xFFF6DBE2),
+    outline = Color(0xFF31262A),
+    readBg = Color(0xFF241A1D),
+    readBg2 = Color(0xFF1B1416),
+    readText = Color(0xFFEEDCE0),
+    readSub = Color(0xFFA98A93),
+    readLine = Color(0x33D98BA0)
+)
+
+private val INK_BLUE = SkinPalette(
+    skin = Skin.INK_BLUE,
+    appBg = Color(0xFF12161C),
+    surface = Color(0xFF191F27),
+    surfaceVariant = Color(0xFF1F262F),
+    text = Color(0xFFDFE6EF),
+    sub = Color(0xFF95A2B3),
+    primary = Color(0xFF7CA0CF),
+    onPrimary = Color(0xFF0C1622),
+    primaryContainer = Color(0xFF1F2A38),
+    onPrimaryContainer = Color(0xFFD3E1F2),
+    outline = Color(0xFF232C36),
+    readBg = Color(0xFF1B222B),
+    readBg2 = Color(0xFF141A21),
+    readText = Color(0xFFD9E2EC),
+    readSub = Color(0xFF8B98A8),
+    readLine = Color(0x337CA0CF)
+)
+
+private val BLACK = SkinPalette(
+    skin = Skin.BLACK,
+    appBg = Color(0xFF000000),
+    surface = Color(0xFF0B0B0C),
+    surfaceVariant = Color(0xFF161617),
+    text = Color(0xFFEAEAEA),
+    sub = Color(0xFF9A9A9A),
+    primary = Color(0xFF9DB4C4),
+    onPrimary = Color(0xFF08141A),
+    primaryContainer = Color(0xFF1C2529),
+    onPrimaryContainer = Color(0xFFD5E3EA),
+    outline = Color(0xFF262626),
+    readBg = Color(0xFF000000),
+    readBg2 = Color(0xFF000000),
+    readText = Color(0xFFD2D2D2),
+    readSub = Color(0xFF7E7E7E),
+    readLine = Color(0x33FFFFFF)
+)
+
+fun paletteOf(skin: Skin): SkinPalette = when (skin) {
+    Skin.PAPER -> PAPER
+    Skin.INK_GREEN -> INK_GREEN
+    Skin.DUSK_PINK -> DUSK_PINK
+    Skin.INK_BLUE -> INK_BLUE
+    Skin.BLACK -> BLACK
+}
 
 private val AppTypography = Typography(
     headlineMedium = TextStyle(fontSize = 26.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold),
@@ -59,25 +147,67 @@ private val AppTypography = Typography(
 )
 
 @Composable
-fun SdTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (dark) DarkScheme else LightScheme,
-        typography = AppTypography,
-        content = content
-    )
-}
-
-/** 阅读页配色 */
-class ReadPalette(
-    val bg: Color,
-    val text: Color,
-    val sub: Color,
-    val isDark: Boolean
-)
-
-fun paletteOf(theme: ReadTheme): ReadPalette = when (theme) {
-    ReadTheme.WHITE -> ReadPalette(Color(0xFFFDFDFB), Color(0xFF232323), Color(0xFF9A9A96), false)
-    ReadTheme.PAPER -> ReadPalette(Color(0xFFF6EEDD), Color(0xFF3B3229), Color(0xFFA79880), false)
-    ReadTheme.GREEN -> ReadPalette(Color(0xFFD6E6D2), Color(0xFF2C3A2C), Color(0xFF7E9180), false)
-    ReadTheme.DARK -> ReadPalette(Color(0xFF111213), Color(0xFF9E9E9C), Color(0xFF5A5C5E), true)
+fun SdTheme(skin: Skin, content: @Composable () -> Unit) {
+    val p = paletteOf(skin)
+    val scheme = if (p.isDark) {
+        darkColorScheme(
+            primary = p.primary,
+            onPrimary = p.onPrimary,
+            primaryContainer = p.primaryContainer,
+            onPrimaryContainer = p.onPrimaryContainer,
+            inversePrimary = p.primary,
+            secondary = p.primary,
+            onSecondary = p.onPrimary,
+            secondaryContainer = p.primaryContainer,
+            onSecondaryContainer = p.onPrimaryContainer,
+            tertiary = p.primary,
+            onTertiary = p.onPrimary,
+            tertiaryContainer = p.primaryContainer,
+            onTertiaryContainer = p.onPrimaryContainer,
+            background = p.appBg,
+            onBackground = p.text,
+            surface = p.surface,
+            onSurface = p.text,
+            surfaceVariant = p.surfaceVariant,
+            onSurfaceVariant = p.sub,
+            surfaceTint = p.primary,
+            surfaceContainerLowest = p.appBg,
+            surfaceContainerLow = p.surface,
+            surfaceContainer = p.surface,
+            surfaceContainerHigh = p.surfaceVariant,
+            surfaceContainerHighest = p.surfaceVariant,
+            outline = p.outline,
+            outlineVariant = p.outline,
+            scrim = Color.Black
+        )
+    } else {
+        lightColorScheme(
+            primary = p.primary,
+            onPrimary = p.onPrimary,
+            primaryContainer = p.primaryContainer,
+            onPrimaryContainer = p.onPrimaryContainer,
+            secondary = Color(0xFF8A6D4B),
+            onSecondary = Color.White,
+            secondaryContainer = Color(0xFFEFE6D5),
+            onSecondaryContainer = Color(0xFF3A2E1C),
+            tertiary = p.primary,
+            onTertiary = p.onPrimary,
+            background = p.appBg,
+            onBackground = p.text,
+            surface = p.surface,
+            onSurface = p.text,
+            surfaceVariant = p.surfaceVariant,
+            onSurfaceVariant = p.sub,
+            surfaceTint = p.primary,
+            surfaceContainerLowest = p.surface,
+            surfaceContainerLow = p.surface,
+            surfaceContainer = p.surface,
+            surfaceContainerHigh = p.surface,
+            surfaceContainerHighest = p.surfaceVariant,
+            outline = p.outline,
+            outlineVariant = p.outline,
+            scrim = Color.Black
+        )
+    }
+    MaterialTheme(colorScheme = scheme, typography = AppTypography, content = content)
 }

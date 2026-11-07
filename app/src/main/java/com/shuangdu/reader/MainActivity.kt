@@ -9,7 +9,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.IntentCompat
 import com.shuangdu.reader.ui.AppRoot
-import com.shuangdu.reader.ui.theme.SdTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -21,9 +20,7 @@ class MainActivity : ComponentActivity() {
         val container = (application as SdApp).container
         pendingOpen.value = extractUri(intent)
         setContent {
-            SdTheme {
-                AppRoot(container, pendingOpen)
-            }
+            AppRoot(container, pendingOpen)
         }
     }
 
