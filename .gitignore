@@ -15,6 +15,7 @@ keystore.properties
 /程序图标素材/
 /发布包/
 /build-tools/
+/shuangdu-*.apk
 *-log.txt
 test-*.txt
 build-*.txt
