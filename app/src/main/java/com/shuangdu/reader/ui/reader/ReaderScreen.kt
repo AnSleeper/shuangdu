@@ -111,7 +111,7 @@ fun ReaderScreen(
 
     val statusBar = with(density) { WindowInsets.statusBars.asPaddingValues().calculateTopPadding() }
     val navBar = with(density) { WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() }
-    val topPad = statusBar + 30.dp
+    val topPad = statusBar + 46.dp
     val bottomPad = navBar + if (settings.showStatus) 24.dp else 10.dp
 
     val style: PageStyle? = remember(
@@ -258,7 +258,7 @@ fun ReaderScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = settings.marginH.dp, end = settings.marginH.dp, top = statusBar + 8.dp)
+                    .padding(start = settings.marginH.dp, end = settings.marginH.dp, top = statusBar + 10.dp)
             )
         }
 
@@ -349,7 +349,7 @@ fun ReaderScreen(
 private fun typefaceOf(font: ReadFont): Typeface = when (font) {
     ReadFont.SYSTEM -> Typeface.create("sans-serif", Typeface.NORMAL)
     ReadFont.SERIF -> Typeface.create("serif", Typeface.NORMAL)
-    ReadFont.KAI -> Typeface.create("serif", Typeface.NORMAL)
+    ReadFont.LIGHT -> Typeface.create("sans-serif-light", Typeface.NORMAL)
 }
 
 @Composable
@@ -423,7 +423,7 @@ private fun ReaderTopBar(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(palette.bg.copy(alpha = 0.98f))
+            .background(palette.bg)
             .padding(top = statusBar + 4.dp, bottom = 10.dp, start = 6.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -468,7 +468,7 @@ private fun ReaderBottomBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(palette.bg.copy(alpha = 0.98f))
+            .background(palette.bg)
             .padding(bottom = navBar + 8.dp)
     ) {
         Row(

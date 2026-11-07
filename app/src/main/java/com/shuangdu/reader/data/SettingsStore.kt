@@ -16,7 +16,7 @@ enum class PageAnim(val label: String) {
 enum class ReadFont(val label: String, val family: String) {
     SYSTEM("默认", "sans-serif"),
     SERIF("宋体", "serif"),
-    KAI("楷体", "serif")
+    LIGHT("细体", "sans-serif-light")
 }
 
 data class ReaderSettings(

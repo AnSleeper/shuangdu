@@ -52,6 +52,11 @@ fun ReaderSettingsSheet(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sliderColors = androidx.compose.material3.SliderDefaults.colors(
+        thumbColor = MaterialTheme.colorScheme.primary,
+        activeTrackColor = MaterialTheme.colorScheme.primary,
+        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+    )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -66,6 +71,7 @@ fun ReaderSettingsSheet(
                     onValueChange = { v -> onChange { it.copy(fontSize = v) } },
                     valueRange = 14f..30f,
                     steps = 15,
+                    colors = sliderColors,
                     modifier = Modifier.weight(1f).padding(horizontal = 10.dp)
                 )
                 Text("A", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -77,6 +83,7 @@ fun ReaderSettingsSheet(
                 onValueChange = { v -> onChange { it.copy(lineSpacing = v) } },
                 valueRange = 1.2f..2.2f,
                 steps = 9,
+                colors = sliderColors,
                 modifier = Modifier.padding(vertical = 2.dp)
             )
 
@@ -86,6 +93,7 @@ fun ReaderSettingsSheet(
                 onValueChange = { v -> onChange { it.copy(marginH = v) } },
                 valueRange = 10f..40f,
                 steps = 14,
+                colors = sliderColors,
                 modifier = Modifier.padding(vertical = 2.dp)
             )
 
