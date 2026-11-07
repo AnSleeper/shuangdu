@@ -9,6 +9,8 @@ import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.LineHeightSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 
 /**
  * 把某一行的高度压到指定像素 —— 段落间距就靠它。
@@ -167,6 +169,25 @@ class PaginatedChapter private constructor(
             return sb
         }
 
+        /** 章节标题：放大加粗，后面留一段 0.6 行的间隔，让标题像正文的一部分 */
+        fun buildTitle(title: String, gapPx: Int): SpannableStringBuilder {
+            val sb = SpannableStringBuilder()
+            val t = title.trim()
+            if (t.isEmpty()) return sb
+            val start = sb.length
+            sb.append(t)
+            sb.setSpan(RelativeSizeSpan(1.32f), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(StyleSpan(Typeface.BOLD), start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.append('\n')
+            if (gapPx > 0) {
+                val gs = sb.length
+                sb.append('\u200B')
+                sb.append('\n')
+                sb.setSpan(GapLineHeightSpan(gapPx), gs, gs + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            return sb
+        }
+
         fun normalizeParagraphs(raw: String): String = buildParagraphs(raw, 1f).toString()
 
         fun textPaint(style: PageStyle): TextPaint = TextPaint().apply {
@@ -177,14 +198,21 @@ class PaginatedChapter private constructor(
             color = style.color
         }
 
-        fun build(rawText: String, style: PageStyle, heightPx: Int): PaginatedChapter {
+        fun build(rawText: String, style: PageStyle, heightPx: Int, title: String = ""): PaginatedChapter {
             val paint = textPaint(style)
             val rawFm = paint.fontMetrics
             val baseLine = (rawFm.descent - rawFm.ascent).toInt().coerceAtLeast(1)
-            val cs: CharSequence = if (style.indent) {
+            val bodyCs: CharSequence = if (style.indent) {
                 buildParagraphs(rawText, style.paragraphGap, baseLine)
             } else {
                 rawText.trim()
+            }
+            val cs: CharSequence = if (title.isNotBlank()) {
+                SpannableStringBuilder()
+                    .append(buildTitle(title, (baseLine * 0.6f).toInt()))
+                    .append(bodyCs)
+            } else {
+                bodyCs
             }
             val layout = StaticLayout.Builder
                 .obtain(cs, 0, cs.length, paint, style.widthPx.coerceAtLeast(1))
@@ -196,14 +224,9 @@ class PaginatedChapter private constructor(
                 .build()
 
             val lineCount = layout.lineCount
-            val lineHeight = if (lineCount >= 2) {
-                val a = layout.getLineTop(1) - layout.getLineTop(0)
-                val b = if (lineCount >= 3) layout.getLineTop(2) - layout.getLineTop(1) else a
-                maxOf(a, b).coerceAtLeast(1)
-            } else {
-                val fm = paint.fontMetrics
-                ((fm.descent - fm.ascent) * style.lineSpacingMult).toInt().coerceAtLeast(1)
-            }
+            // 正文行高直接用字号算，别被标题那行的大字号带偏
+            val lineHeight = ((rawFm.descent - rawFm.ascent) * style.lineSpacingMult)
+                .toInt().coerceAtLeast(1)
             val usable = heightPx.coerceAtLeast(lineHeight)
 
             val starts = ArrayList<Int>(lineCount / 4 + 2)

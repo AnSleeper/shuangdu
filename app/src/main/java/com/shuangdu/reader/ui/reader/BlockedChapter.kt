@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import android.text.Layout
+import android.text.SpannableStringBuilder
 import android.text.StaticLayout
 
 /**
@@ -102,16 +103,21 @@ class BlockedChapter private constructor(
             rawText: String,
             style: PageStyle,
             heightPx: Int,
-            loadImage: (Int) -> Bitmap?
+            loadImage: (Int) -> Bitmap?,
+            title: String = ""
         ): BlockedChapter? {
             if (!hasImageMarker(rawText)) return null
 
             val blocks = splitBlocks(rawText)
             val paint = PaginatedChapter.textPaint(style)
+            val titleSb = if (title.isNotBlank()) {
+                val fm = paint.fontMetrics
+                PaginatedChapter.buildTitle(title, ((fm.descent - fm.ascent) * 0.6f).toInt())
+            } else null
+            var titlePlaced = false
 
-            var lineHeight = ((paint.fontMetrics.descent - paint.fontMetrics.ascent) * style.lineSpacingMult)
+            val lineHeight = ((paint.fontMetrics.descent - paint.fontMetrics.ascent) * style.lineSpacingMult)
                 .toInt().coerceAtLeast(1)
-            var measured = false
 
             val pages = ArrayList<List<Op>>()
             var ops = ArrayList<Op>()
@@ -143,7 +149,7 @@ class BlockedChapter private constructor(
 
             for (block in blocks) {
                 if (block is String) {
-                    val body: CharSequence = if (style.indent) {
+                    var body: CharSequence = if (style.indent) {
                         val fm = paint.fontMetrics
                         PaginatedChapter.buildParagraphs(
                             block,
@@ -152,11 +158,12 @@ class BlockedChapter private constructor(
                         )
                     } else block.trim()
                     if (body.isBlank()) continue
-                    val layout = newTextLayout(body)
-                    if (!measured && layout.lineCount >= 2) {
-                        lineHeight = (layout.getLineTop(1) - layout.getLineTop(0)).coerceAtLeast(1)
-                        measured = true
+                    // 章节标题拼在第一个文字块的开头
+                    if (titleSb != null && !titlePlaced) {
+                        body = SpannableStringBuilder().append(titleSb).append(body)
+                        titlePlaced = true
                     }
+                    val layout = newTextLayout(body)
                     val lineCount = layout.lineCount
                     var line = 0
                     val base = charCursor

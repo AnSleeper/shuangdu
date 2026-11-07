@@ -168,10 +168,10 @@ fun ReaderScreen(
                 if (engine.layouts[i] != null) continue
                 val text = engine.textOf(i) ?: repo.readChapter(book, i)
                 if (text.isEmpty() && i != center) continue
-                val blocked = BlockedChapter.build(text, st, h) { idx ->
+                val blocked = BlockedChapter.build(text, st, h, { idx ->
                     repo.loadChapterImage(book, idx.toString(), st.widthPx)
-                }
-                val src: PageSource = blocked ?: PaginatedChapter.build(text, st, h)
+                }, engine.titleOf(i))
+                val src: PageSource = blocked ?: PaginatedChapter.build(text, st, h, engine.titleOf(i))
                 out.add(Triple(i, text, src))
             }
             out
