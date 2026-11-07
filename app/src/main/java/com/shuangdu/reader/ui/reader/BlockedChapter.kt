@@ -144,7 +144,12 @@ class BlockedChapter private constructor(
             for (block in blocks) {
                 if (block is String) {
                     val body: CharSequence = if (style.indent) {
-                        PaginatedChapter.buildParagraphs(block, style.paragraphGap)
+                        val fm = paint.fontMetrics
+                        PaginatedChapter.buildParagraphs(
+                            block,
+                            style.paragraphGap,
+                            (fm.descent - fm.ascent).toInt().coerceAtLeast(1)
+                        )
                     } else block.trim()
                     if (body.isBlank()) continue
                     val layout = newTextLayout(body)

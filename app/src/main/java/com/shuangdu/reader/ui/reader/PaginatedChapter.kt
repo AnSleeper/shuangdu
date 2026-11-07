@@ -1,13 +1,35 @@
 package com.shuangdu.reader.ui.reader
 
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.text.Layout
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
-import android.text.style.RelativeSizeSpan
+import android.text.style.LineHeightSpan
+
+/**
+ * 把某一行的高度压到指定像素 —— 段落间距就靠它。
+ * 因为 LineHeightSpan 是 ParagraphStyle，作用在只有零宽字符的那一行上，正好把那段空白压矮。
+ */
+private class GapLineHeightSpan(private val heightPx: Int) : LineHeightSpan {
+    override fun chooseHeight(
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        spanstartv: Int,
+        lineHeight: Int,
+        fm: Paint.FontMetricsInt
+    ) {
+        val current = fm.descent - fm.ascent
+        if (current <= heightPx) return
+        val delta = current - heightPx
+        fm.ascent += delta / 2
+        fm.descent -= delta - delta / 2
+    }
+}
 
 data class PageStyle(
     val textSizePx: Float,
@@ -63,8 +85,10 @@ class PaginatedChapter private constructor(
         /**
          * 段落规范化：每行 = 一段，剥掉行首尾空白后统一补两个全角空格。
          * gap = 段间距占一行高度的比例，0 表示不留空，1 表示整整一行。
+         * 段间距用「零宽字符 + LineHeightSpan 指定行高」实现 —— 这是真正能改行高的做法，
+         * RelativeSizeSpan 改字号是无效的（StaticLayout 不按它压行）。
          */
-        fun buildParagraphs(raw: String, gap: Float): CharSequence {
+        fun buildParagraphs(raw: String, gap: Float, baseLinePx: Int = 0): CharSequence {
             val sb = SpannableStringBuilder()
             var first = true
             val g = gap.coerceIn(0f, 1f)
@@ -73,16 +97,19 @@ class PaginatedChapter private constructor(
                 if (t.isEmpty()) continue
                 if (!first) {
                     sb.append('\n')
-                    if (g > 0.06f) {
+                    if (g > 0.04f) {
                         val start = sb.length
                         sb.append('\u200B')
                         sb.append('\n')
-                        sb.setSpan(
-                            RelativeSizeSpan(g),
-                            start,
-                            start + 1,
-                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
+                        val h = if (baseLinePx > 0) (baseLinePx * g).toInt().coerceAtLeast(1) else 0
+                        if (h > 0) {
+                            sb.setSpan(
+                                GapLineHeightSpan(h),
+                                start,
+                                start + 1,
+                                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                        }
                     }
                 }
                 sb.append("\u3000\u3000").append(t)
@@ -102,12 +129,14 @@ class PaginatedChapter private constructor(
         }
 
         fun build(rawText: String, style: PageStyle, heightPx: Int): PaginatedChapter {
+            val paint = textPaint(style)
+            val rawFm = paint.fontMetrics
+            val baseLine = (rawFm.descent - rawFm.ascent).toInt().coerceAtLeast(1)
             val cs: CharSequence = if (style.indent) {
-                buildParagraphs(rawText, style.paragraphGap)
+                buildParagraphs(rawText, style.paragraphGap, baseLine)
             } else {
                 rawText.trim()
             }
-            val paint = textPaint(style)
             val layout = StaticLayout.Builder
                 .obtain(cs, 0, cs.length, paint, style.widthPx.coerceAtLeast(1))
                 .setLineSpacing(0f, style.lineSpacingMult)
