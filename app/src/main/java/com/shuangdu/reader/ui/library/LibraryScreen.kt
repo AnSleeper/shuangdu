@@ -449,7 +449,15 @@ fun LibraryScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    pendingDelete.forEach { container.repository.delete(it) }
+                    pendingDelete.forEach { b ->
+                        // 正在听这本书：先停播放（顺带收掉前台服务与通知），否则文件删了播放器还拿着死路径
+                        if (container.ttsPlayer.state.value.bookId == b.id) {
+                            container.ttsPlayer.stop()
+                        }
+                        // 释放转换器里缓存的本书索引与音频状态
+                        container.ttsConverter.forget(b.id)
+                        container.repository.delete(b)
+                    }
                     onNotify(if (pendingDelete.size == 1) "已移除" else "已移除 ${pendingDelete.size} 本")
                     pendingDelete = emptyList()
                     exitSelection()
