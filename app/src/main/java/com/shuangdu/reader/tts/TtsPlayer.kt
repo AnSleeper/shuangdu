@@ -17,13 +17,15 @@ import java.io.File
  * 听书播放器：ExoPlayer 播放列表，逐段无缝衔接。
  * state 里带「当前章 / 当前段」，阅读页据此高亮。
  */
-class TtsPlayer(context: Context) {
+class TtsPlayer(private val context: Context) {
 
     data class State(
         val playing: Boolean = false,
         val active: Boolean = false,
         val bookId: String = "",
+        val bookTitle: String = "",
         val chapter: Int = -1,
+        val chapterTitle: String = "",
         val segment: Int = -1,
         val segments: List<TtsSegment> = emptyList(),
         val timerMinutes: Int = 0,
@@ -50,6 +52,9 @@ class TtsPlayer(context: Context) {
     /** 章节播完自动接下一章：返回该章已转好的段落，null 表示没有/没转完 */
     var nextChapterProvider: ((bookId: String, chapter: Int) -> List<TtsSegment>? )? = null
     var dirProvider: ((bookId: String) -> File)? = null
+
+    /** 取书名与章节名，给通知/书架迷你条用（返回 书名 to 章节名） */
+    var metaProvider: ((bookId: String, chapter: Int) -> Pair<String, String>? )? = null
 
     init {
         player.addListener(object : Player.Listener {
@@ -82,11 +87,15 @@ class TtsPlayer(context: Context) {
         val s = _state.value
         if (s.bookId.isEmpty() || s.chapter < 0) return
         val next = s.chapter + 1
-        val segs = nextChapterProvider?.invoke(s.bookId, next) ?: return
-        if (segs.isEmpty() || !segs.all { it.done }) return
-        val dir = dirProvider?.invoke(s.bookId) ?: return
-        // 从监听器里改播放器结构不安全，抛到主线程协程里做
-        tickerScope.launch { play(s.bookId, next, segs, 0, dir) }
+        val segs = nextChapterProvider?.invoke(s.bookId, next)
+        val dir = dirProvider?.invoke(s.bookId)
+        if (segs != null && segs.isNotEmpty() && segs.all { it.done } && dir != null) {
+            // 从监听器里改播放器结构不安全，抛到主线程协程里做
+            tickerScope.launch { play(s.bookId, next, segs, 0, dir) }
+            return
+        }
+        // 后面没有可播的了：收起前台服务与通知，但保留会话（书架/悬浮球还能继续）
+        TtsPlaybackService.stop(context)
     }
 
     val currentChapter: Int get() = _state.value.chapter
@@ -112,11 +121,14 @@ class TtsPlayer(context: Context) {
                     .build()
             )
         }
+        val meta = runCatching { metaProvider?.invoke(bookId, chapter) }.getOrNull()
         _state.value = State(
             playing = false,
             active = true,
             bookId = bookId,
+            bookTitle = meta?.first.orEmpty(),
             chapter = chapter,
+            chapterTitle = meta?.second.orEmpty(),
             segment = playable.first().index,
             segments = playable,
             timerMinutes = _state.value.timerMinutes,
@@ -125,6 +137,8 @@ class TtsPlayer(context: Context) {
         player.prepare()
         player.play()
         startTimerTicker()
+        // 前台服务：只在 App 前台时播放才会走到这里，符合 Android 12+ 的限制
+        TtsPlaybackService.start(context)
     }
 
     fun pause() {
@@ -146,6 +160,8 @@ class TtsPlayer(context: Context) {
         timerJob?.cancel()
         timerRemainingMs = 0
         _state.value = State()
+        // 退出听书：前台服务与常驻通知一起收掉
+        TtsPlaybackService.stop(context)
     }
 
     fun setSpeed(speed: Float) {

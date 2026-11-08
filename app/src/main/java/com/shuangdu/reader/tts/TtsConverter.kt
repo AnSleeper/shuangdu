@@ -63,6 +63,49 @@ class TtsConverter(
     private val _batchQueue = MutableStateFlow<List<String>>(emptyList())
     val batchQueue: StateFlow<List<String>> = _batchQueue.asStateFlow()
 
+    /**
+     * 每本书的音频状态：0=没转 1=部分转好 2=整本转完。
+     * 由转换层维护，书架直接订阅 —— 不用每次重组遍历全书章节。
+     */
+    private val _audioStates = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val audioStates: StateFlow<Map<String, Int>> = _audioStates.asStateFlow()
+
+    /** 本轮已上报「该章刚转完」的标记，避免每段都算一次 */
+    private val reportedComplete = ConcurrentHashMap<String, Boolean>()
+    /** 算一本书的状态并广播（O(1)，不遍历段） */
+    fun refreshAudioState(book: Book) {
+        val index = indexOf(book)
+        val done = index.completedChapterCount()
+        val total = repo.chapterCount(book)
+        val state = when {
+            done <= 0 -> 0
+            total > 0 && done >= total -> 2
+            else -> 1
+        }
+        if (_audioStates.value[book.id] != state) {
+            _audioStates.value = _audioStates.value.toMutableMap().apply { put(book.id, state) }
+        }
+    }
+
+    /** 书架首次加载时补算还没算过的书（IO 线程调用） */
+    fun ensureAudioStates(books: List<Book>) {
+        var changed = false
+        val map = _audioStates.value.toMutableMap()
+        books.forEach { b ->
+            if (map.containsKey(b.id)) return@forEach
+            val index = indexOf(b)
+            val done = index.completedChapterCount()
+            val total = repo.chapterCount(b)
+            map[b.id] = when {
+                done <= 0 -> 0
+                total > 0 && done >= total -> 2
+                else -> 1
+            }
+            changed = true
+        }
+        if (changed) _audioStates.value = map
+    }
+
     /** 多本批量转：逐本排队执行，主页显示队列进度 */
     fun convertMany(books: List<Book>) {
         if (batchJob?.isActive == true) return
@@ -107,6 +150,8 @@ class TtsConverter(
         retryJobs.remove(book.id)?.cancel()
         val index = indexOf(book)
         index.resetChapters(chapters ?: index.completedChapters().ifEmpty { (0 until repo.chapterCount(book)).toList() })
+        refreshAudioState(book)
+        reportedComplete.keys.filter { it.startsWith("${book.id}:") }.forEach { reportedComplete.remove(it) }
         convert(book, chapters)
     }
 
@@ -122,6 +167,7 @@ class TtsConverter(
             val index = indexOf(book)
             val chapters = index.completedChapters()
             index.resetAudio()
+            refreshAudioState(book)
             if (chapters.isNotEmpty()) convert(book, chapters)
         }
     }
@@ -134,6 +180,9 @@ class TtsConverter(
 
     fun forget(bookId: String) {
         indexes.remove(bookId)
+        if (_audioStates.value.containsKey(bookId)) {
+            _audioStates.value = _audioStates.value.toMutableMap().apply { remove(bookId) }
+        }
     }
 
     fun isRunning(bookId: String): Boolean = jobs[bookId]?.isActive == true
@@ -161,7 +210,10 @@ class TtsConverter(
             return
         }
         // 用户手动发起新一轮，取消还排着的自动重试（内部重试轮次除外）
-        if (retryRound == 0) retryJobs.remove(book.id)?.cancel()
+        if (retryRound == 0) {
+            retryJobs.remove(book.id)?.cancel()
+            reportedComplete.keys.filter { it.startsWith("${book.id}:") }.forEach { reportedComplete.remove(it) }
+        }
         val key = keyStore.load()
         if (key == null) {
             update(book.id) { Progress(book.id, message = "还没填 Fish Audio 密钥", lastError = "还没填 Fish Audio 密钥") }
@@ -224,6 +276,12 @@ class TtsConverter(
                                 val err = synthesizeOne(book, index, ch, seg, tts, voiceId)
                                 if (err == null) {
                                     doneCounter.incrementAndGet()
+                                    // 这一章刚好转完 → 刷新书架状态（每章最多一次，O(1)）
+                                    if (index.isChapterComplete(ch) &&
+                                        reportedComplete.putIfAbsent("${book.id}:$ch", true) == null
+                                    ) {
+                                        refreshAudioState(book)
+                                    }
                                 } else {
                                     failCounter.incrementAndGet()
                                     lastError.set(err)
@@ -250,6 +308,7 @@ class TtsConverter(
                     }.awaitAll()
                 }
                 index.save()
+                refreshAudioState(book)
                 val failed = failCounter.get()
                 val reason = lastError.get()
                 if (failed > 0 && retryRound < MAX_AUTO_RETRY) {

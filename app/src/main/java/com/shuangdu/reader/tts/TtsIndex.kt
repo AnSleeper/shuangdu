@@ -22,6 +22,14 @@ class TtsIndex(private val dir: File) {
     private val file = File(dir, "index.json")
     private val chapters = LinkedHashMap<Int, MutableList<TtsSegment>>()
 
+    /**
+     * 增量维护的统计：每章已完成段数、已完成章集合。
+     * 这样 isChapterComplete / hasAnyChapterComplete / completedChapterCount 都是 O(1)，
+     * 书架判断「部分/整本」不必每次遍历全书所有段。
+     */
+    private val donePerChapter = HashMap<Int, Int>()
+    private val completeChapters = HashSet<Int>()
+
     /** 这本书用的音色（留空表示跟随全局） */
     var voiceId: String = ""
     var voiceName: String = ""
@@ -59,7 +67,33 @@ class TtsIndex(private val dir: File) {
                 }
                 chapters[idx] = list
             }
+            recomputeStats()
         }
+    }
+
+    /** 全量重算统计（load 后、批量重置后调用） */
+    private fun recomputeStats() {
+        donePerChapter.clear()
+        completeChapters.clear()
+        chapters.forEach { (ch, segs) ->
+            val done = segs.count { it.done }
+            donePerChapter[ch] = done
+            if (segs.isNotEmpty() && done == segs.size) completeChapters.add(ch)
+        }
+    }
+
+    /** 单章统计刷新（切分新章、重置某章后调用） */
+    private fun refreshChapterStats(chapter: Int) {
+        val segs = chapters[chapter]
+        if (segs == null) {
+            donePerChapter.remove(chapter)
+            completeChapters.remove(chapter)
+            return
+        }
+        val done = segs.count { it.done }
+        donePerChapter[chapter] = done
+        if (segs.isNotEmpty() && done == segs.size) completeChapters.add(chapter)
+        else completeChapters.remove(chapter)
     }
 
     fun save() {
@@ -103,28 +137,36 @@ class TtsIndex(private val dir: File) {
         if (existing != null && existing.isNotEmpty()) return existing
         val segs = Segmenter.split(chapter, text, title)
         chapters[chapter] = segs.toMutableList()
+        refreshChapterStats(chapter)
         return chapters[chapter]!!
     }
 
     fun update(chapter: Int, segment: TtsSegment) {
         val list = chapters[chapter] ?: return
         val i = list.indexOfFirst { it.index == segment.index }
-        if (i >= 0) list[i] = segment
+        if (i < 0) return
+        val before = list[i].done
+        list[i] = segment
+        if (before != segment.done) {
+            val done = (donePerChapter[chapter] ?: 0) + if (segment.done) 1 else -1
+            donePerChapter[chapter] = done
+            if (done >= list.size) completeChapters.add(chapter) else completeChapters.remove(chapter)
+        }
     }
 
     fun chapterProgress(chapter: Int): Pair<Int, Int> {
-        val segs = chapters[chapter].orEmpty()
-        return segs.count { it.done } to segs.size
+        val total = chapters[chapter]?.size ?: 0
+        return (donePerChapter[chapter] ?: 0) to total
     }
 
-    fun isChapterComplete(chapter: Int): Boolean {
-        val segs = chapters[chapter].orEmpty()
-        return segs.isNotEmpty() && segs.all { it.done }
-    }
+    fun isChapterComplete(chapter: Int): Boolean = chapter in completeChapters
 
-    fun hasAnyChapterComplete(): Boolean = chapters.any { (_, segs) -> segs.isNotEmpty() && segs.all { it.done } }
+    fun hasAnyChapterComplete(): Boolean = completeChapters.isNotEmpty()
 
-    fun completedChapters(): List<Int> = chapters.filter { (_, s) -> s.isNotEmpty() && s.all { it.done } }.keys.toList()
+    /** 已完成章数（O(1)） */
+    fun completedChapterCount(): Int = completeChapters.size
+
+    fun completedChapters(): List<Int> = completeChapters.toList()
 
     /** 换音色后重转：删掉所有音频文件，段落全部标记为未转 */
     fun resetAudio() {
@@ -134,6 +176,7 @@ class TtsIndex(private val dir: File) {
         chapters.forEach { (_, list) ->
             for (i in list.indices) list[i] = list[i].copy(done = false)
         }
+        recomputeStats()
         save()
     }
 
@@ -145,6 +188,7 @@ class TtsIndex(private val dir: File) {
                 runCatching { audioFile(list[i].file).delete() }
                 list[i] = list[i].copy(done = false)
             }
+            refreshChapterStats(ch)
         }
         save()
     }
@@ -152,6 +196,8 @@ class TtsIndex(private val dir: File) {
     fun deleteAll() {
         runCatching { dir.deleteRecursively() }
         chapters.clear()
+        donePerChapter.clear()
+        completeChapters.clear()
         loaded = false
     }
 }

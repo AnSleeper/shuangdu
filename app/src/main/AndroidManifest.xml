@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -52,6 +54,12 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- 听书前台服务：保护息屏/后台播放不被冻结，并提供常驻播放通知 -->
+        <service
+            android:name=".tts.TtsPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

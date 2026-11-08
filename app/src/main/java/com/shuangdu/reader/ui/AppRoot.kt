@@ -48,11 +48,15 @@ sealed interface Route {
 }
 
 @Composable
-fun AppRoot(container: AppContainer, pendingOpen: MutableState<Uri?>) {
+fun AppRoot(
+    container: AppContainer,
+    pendingOpen: MutableState<Uri?>,
+    pendingBook: MutableState<String?> = remember { mutableStateOf(null) }
+) {
     val settings by container.settings.state.collectAsStateWithLifecycle()
     SdTheme(settings.skin) {
         SystemBars(settings.skin.isDark, paletteOf(settings.skin).appBg)
-        AppRootContent(container, pendingOpen)
+        AppRootContent(container, pendingOpen, pendingBook)
     }
 }
 
@@ -88,7 +92,11 @@ private fun android.content.Context.findActivity(): android.app.Activity? {
 }
 
 @Composable
-private fun AppRootContent(container: AppContainer, pendingOpen: MutableState<Uri?>) {
+private fun AppRootContent(
+    container: AppContainer,
+    pendingOpen: MutableState<Uri?>,
+    pendingBook: MutableState<String?>
+) {
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val pal = paletteOf(settings.skin)
     var route by remember { mutableStateOf<Route>(Route.Library) }
@@ -154,6 +162,23 @@ private fun AppRootContent(container: AppContainer, pendingOpen: MutableState<Ur
             }
             if (segs.isNotEmpty() && segs.all { it.done }) segs else null
         }
+        // 通知/书架迷你条要显示书名与章节名
+        player.metaProvider = { bookId, chapter ->
+            val book = container.library.books.value.firstOrNull { it.id == bookId }
+            if (book == null) null else {
+                val chTitle = runCatching {
+                    container.repository.loadChapters(book).getOrNull(chapter)?.title.orEmpty()
+                }.getOrDefault("")
+                book.title to chTitle
+            }
+        }
+    }
+
+    // 从通知点进来：直接打开那本书
+    LaunchedEffect(pendingBook.value) {
+        val id = pendingBook.value ?: return@LaunchedEffect
+        pendingBook.value = null
+        if (container.library.find(id) != null) route = Route.Reader(id)
     }
 
     // 外部用别的 app 打开 txt/epub

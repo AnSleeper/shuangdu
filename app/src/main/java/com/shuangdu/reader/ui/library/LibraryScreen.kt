@@ -44,6 +44,8 @@ import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material3.AlertDialog
@@ -63,6 +65,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -112,12 +115,16 @@ fun LibraryScreen(
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val ttsMap by container.ttsConverter.state.collectAsStateWithLifecycle()
     val batchQueue by container.ttsConverter.batchQueue.collectAsStateWithLifecycle()
+    val playerState by container.ttsPlayer.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    // 音频状态：0=无 1=部分转好 2=整本转完。只在书籍列表或转换进度变化时重算
-    val audioStates = remember(books, ttsMap) {
-        books.associate { it.id to audioStateOf(container, it) }
+    // 音频状态由转换层维护推送，书架只订阅（0=无 1=部分 2=整本）
+    val audioStates by container.ttsConverter.audioStates.collectAsStateWithLifecycle()
+    LaunchedEffect(books) {
+        kotlinx.coroutines.withContext(Dispatchers.IO) {
+            container.ttsConverter.ensureAudioStates(books)
+        }
     }
 
     var menuOpen by remember { mutableStateOf(false) }
@@ -155,6 +162,7 @@ fun LibraryScreen(
 
     BackHandler(enabled = selectionMode) { exitSelection() }
 
+    Box(Modifier.fillMaxSize()) {
     Column(
         Modifier
             .fillMaxSize()
@@ -352,7 +360,13 @@ fun LibraryScreen(
             LazyVerticalGrid(
                 columns = GridCells.Fixed(3),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 6.dp,
+                    // 有迷你播放条时底部留出空间，别遮住最后一行书
+                    bottom = if (playerState.active && !selectionMode) 84.dp else 28.dp
+                ),
                 horizontalArrangement = Arrangement.spacedBy(13.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
@@ -389,6 +403,32 @@ fun LibraryScreen(
                     )
                 }
             }
+        }
+    }
+
+        // 迷你播放条：听书会话进行中（含暂停）时贴在底部，点条身回到那本书
+        if (playerState.active && !selectionMode) {
+            MiniPlayerBar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 14.dp)
+                    .padding(bottom = 12.dp),
+                title = playerState.bookTitle.ifBlank { "正在听书" },
+                subtitle = if (playerState.chapterTitle.isBlank()) {
+                    "第 ${playerState.chapter + 1} 章"
+                } else {
+                    playerState.chapterTitle
+                },
+                playing = playerState.playing,
+                onOpen = {
+                    val id = playerState.bookId
+                    if (id.isNotBlank() && container.library.find(id) != null) onOpenBook(id)
+                },
+                onToggle = {
+                    if (playerState.playing) container.ttsPlayer.pause() else container.ttsPlayer.resume()
+                },
+                onClose = { container.ttsPlayer.stop() }
+            )
         }
     }
 
@@ -562,16 +602,6 @@ private fun GroupRow(label: String, onClick: () -> Unit) {
     }
 }
 
-/** 0=无音频 1=部分转好 2=整本转完（先看目录在不在，避免每本书都读 index） */
-private fun audioStateOf(container: AppContainer, book: Book): Int {
-    val dir = java.io.File(container.repository.bookDir(book.id), "tts")
-    if (!java.io.File(dir, "index.json").exists()) return 0
-    val index = container.ttsConverter.indexOf(book)
-    if (!index.hasAnyChapterComplete()) return 0
-    val total = container.repository.chapterCount(book)
-    return if (total > 0 && index.completedChapters().size >= total) 2 else 1
-}
-
 private fun collectDocs(context: android.content.Context, treeUri: Uri): List<Uri> {    val root = DocumentFile.fromTreeUri(context, treeUri) ?: return emptyList()
     val out = ArrayList<Uri>()
     fun walk(dir: DocumentFile, depth: Int) {
@@ -588,6 +618,71 @@ private fun collectDocs(context: android.content.Context, treeUri: Uri): List<Ur
     }
     walk(root, 0)
     return out
+}
+
+@Composable
+private fun MiniPlayerBar(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    playing: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+    onClose: () -> Unit
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpen)
+                .padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Rounded.Headphones,
+                null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onToggle) {
+                Icon(
+                    if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if (playing) "暂停" else "继续",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            IconButton(onClick = onClose) {
+                Icon(
+                    Icons.Rounded.Close,
+                    "退出听书",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }
 
 @Composable

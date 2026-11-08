@@ -11,13 +11,23 @@
 - **导出整本结束提醒**（2026-11-08 晚，已编译通过，未打包未发版）：
   `TtsExporter` 改为返回结构化 `Result`，成功/失败都弹提醒窗，写清文件名、合并段数、保存位置（或失败原因）；
   面板内保留一行「上次导出…」小字；顺带加了「没有已转好音频时不创建空 MP3」的检查。
-  下个版本发布时记得把这条写进 release notes，并同步 `发布包/version.json`。
+- **500 章性能优化**（2026-11-08 深夜，已编译+模拟器验证）：
+  `TtsIndex` 增量维护 `donePerChapter` / `completeChapters`，`isChapterComplete`、`hasAnyChapterComplete`、
+  `completedChapterCount` 全部 O(1)；`TtsConverter.audioStates` 改为状态流，只在每章转完/整本结算/重置/删除时刷新；
+  书架 `LibraryScreen` 改为订阅，不再用 `remember(books, ttsMap)` 全表扫描。
+- **前台播放服务 + 常驻通知**（同上）：
+  新增 `TtsPlaybackService`（`mediaPlayback` 类型），播放时显示「书名 / 章节」通知，含「暂停/继续」与点击回到该书；
+  退出听书或进程结束通知消失；整本播完也收起服务。`TtsPlayer.play/stop` 负责起停，`AppRoot` 注入书名章节 provider。
+  Manifest 补 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK` 与 `<service>`；首次启动申请通知权限。
+- **书架迷你播放条**（同上）：
+  书架底部悬浮条，显示书名 + 章节，点条身回到那本书，右侧播放/暂停，最右 × 退出听书；多选模式隐藏；
+  网格底部留白避免遮挡。
 
-## 待主人拍板（我没动，风险大于收益）
-- **旧索引补标题段**：1.3.5 之前转过的章节，索引里没有「章节标题」这一段，所以老音频不读标题。
-  直接补段会打乱段号/文件名（`TtsPlayer.play` 用 `index >= fromSegment` 过滤，负段号会被丢掉），
-  而且会把「已转好」的旧章节变回「未完成」触发补转。需要主人决定：
-  A. 不管老数据（只影响新转的章节）／B. 提供「重建本书索引」按钮，用户主动触发／C. 其他方案。
+下个版本发布时把这四条写进 release notes，并同步 `发布包/version.json`。
+
+## 已关闭（主人拍板不做）
+- **旧索引补标题段**：2026-11-08 主人确认不做。理由：新导入的书每章第一次转就自带标题段，老书看完就删，影响可忽略。
+  （背景：1.3.5 前建过索引的章节不含标题段，补段会打乱段号/文件名并触发补转，风险大于收益。）
 
 ## 观察项（用户反馈驱动）
 - 并发 20 长书连续转换是否稳定
