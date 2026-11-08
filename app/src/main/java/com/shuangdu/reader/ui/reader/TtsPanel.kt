@@ -77,10 +77,9 @@ fun TtsPanel(
 
     var showVoicePicker by remember { mutableStateOf(false) }
     var showReconvert by remember { mutableStateOf(false) }
-    var manualChapter by remember { mutableIntStateOf(currentChapter) }
-    // 播放器在播这本书时以播放器的章节为准（跨章/点章节列表都会同步）
+    // 播放器在播这本书时以播放器的章节为准；没在播则跟随当前阅读章
     val playingChapter =
-        if (playerState.bookId == book.id && playerState.chapter >= 0) playerState.chapter else manualChapter
+        if (playerState.bookId == book.id && playerState.chapter >= 0) playerState.chapter else currentChapter
     // 待确认的重转请求（label, chapters）
     var pendingConvert by remember { mutableStateOf<Pair<String, List<Int>?>?>(null) }
     var exporting by remember { mutableStateOf(false) }
@@ -95,7 +94,6 @@ fun TtsPanel(
             container.ttsConverter.convert(book, listOf(ch))
             return
         }
-        manualChapter = ch
         container.ttsPlayer.play(book.id, ch, segs, from, dir)
         container.ttsPlayer.setSpeed(tts.speed)
     }
@@ -188,7 +186,8 @@ fun TtsPanel(
                             when {
                                 isPlaying -> container.ttsPlayer.pause()
                                 isThisBook && playerState.chapter == playingChapter -> container.ttsPlayer.resume()
-                                else -> playChapter(playingChapter, 0)
+                                // 开始听书默认从本页开始播
+                                else -> playChapter(playingChapter, startSegment)
                             }
                         },
                     contentAlignment = Alignment.Center
@@ -424,7 +423,6 @@ fun TtsPanel(
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
                                 // 跳文本 + 播放器定位到这一章；原本暂停就保持暂停
-                                manualChapter = ch
                                 onJumpToChapter(ch)
                                 val segs = index.segmentsOf(ch)
                                 if (segs.any { it.done }) {

@@ -49,6 +49,29 @@ class TtsConverter(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<String, Job>()
+    private var batchJob: Job? = null
+
+    /** 批量转换队列：排队中（含正在转）的 bookId，按顺序 */
+    private val _batchQueue = MutableStateFlow<List<String>>(emptyList())
+    val batchQueue: StateFlow<List<String>> = _batchQueue.asStateFlow()
+
+    /** 多本批量转：逐本排队执行，主页显示队列进度 */
+    fun convertMany(books: List<Book>) {
+        if (batchJob?.isActive == true) return
+        batchJob = scope.launch {
+            _batchQueue.value = books.map { it.id }
+            for (b in books) {
+                convert(b)
+                var guard = 0
+                while (isRunning(b.id) && guard < 7200) {
+                    delay(500)
+                    guard++
+                }
+                clearFinished(b.id)
+            }
+            _batchQueue.value = emptyList()
+        }
+    }
 
     @Volatile
     private var gateUntil = 0L

@@ -111,6 +111,7 @@ fun LibraryScreen(
     val groups by container.library.groups.collectAsStateWithLifecycle()
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val ttsMap by container.ttsConverter.state.collectAsStateWithLifecycle()
+    val batchQueue by container.ttsConverter.batchQueue.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -187,20 +188,8 @@ fun LibraryScreen(
                     val targets = books.filter { it.id in selected }
                     if (targets.isEmpty()) return@IconButton
                     exitSelection()
-                    onNotify("开始转音频：${targets.size} 本")
-                    scope.launch {
-                        targets.forEach { b ->
-                            container.ttsConverter.convert(b)
-                            // 等这本转完再下一本，避免并发叠加
-                            var guard = 0
-                            while (container.ttsConverter.isRunning(b.id) && guard < 7200) {
-                                kotlinx.coroutines.delay(500)
-                                guard++
-                            }
-                            container.ttsConverter.clearFinished(b.id)
-                        }
-                        onNotify("音频转换完成")
-                    }
+                    onNotify("已加入转换队列：${targets.size} 本（书架封面显示进度）")
+                    container.ttsConverter.convertMany(targets)
                 }) {
                     Icon(Icons.Rounded.Headphones, "转音频", tint = MaterialTheme.colorScheme.onBackground)
                 }
@@ -364,6 +353,7 @@ fun LibraryScreen(
             ) {
                 items(visible, key = { it.id }) { book ->
                     val p = ttsMap[book.id]
+                    val qIdx = batchQueue.indexOf(book.id)
                     BookCard(
                         book = book,
                         coverPath = container.repository.coverFile(book)?.absolutePath,
@@ -374,6 +364,7 @@ fun LibraryScreen(
                         ttsProgress = p?.let {
                             if (it.total <= 0) 0f else (it.done + it.failed).toFloat() / it.total
                         } ?: 0f,
+                        queueLabel = if (qIdx >= 0 && p?.running != true) "排队 #${qIdx + 1}" else null,
                         onClick = {
                             if (selectionMode) {
                                 if (book.id in selected) selected.remove(book.id) else selected.add(book.id)
@@ -638,6 +629,7 @@ private fun BookCard(
     audioReady: Boolean,
     ttsRunning: Boolean,
     ttsProgress: Float,
+    queueLabel: String?,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -732,6 +724,22 @@ private fun BookCard(
                         "转 ${(ttsProgress * 100).toInt()}%",
                         fontSize = 8.sp,
                         color = Color(0xFF9FD8C0)
+                    )
+                }
+            }
+            if (!ttsRunning && queueLabel != null) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        queueLabel,
+                        fontSize = 8.sp,
+                        color = Color(0xFFC8D8C0)
                     )
                 }
             }
