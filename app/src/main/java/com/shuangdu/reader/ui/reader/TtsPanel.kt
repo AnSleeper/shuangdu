@@ -77,24 +77,38 @@ fun TtsPanel(
 
     var showVoicePicker by remember { mutableStateOf(false) }
     var showReconvert by remember { mutableStateOf(false) }
-    var playingChapter by remember { mutableIntStateOf(currentChapter) }
+    var manualChapter by remember { mutableIntStateOf(currentChapter) }
+    // 播放器在播这本书时以播放器的章节为准（跨章/点章节列表都会同步）
+    val playingChapter =
+        if (playerState.bookId == book.id && playerState.chapter >= 0) playerState.chapter else manualChapter
+    // 待确认的重转请求（label, chapters）
+    var pendingConvert by remember { mutableStateOf<Pair<String, List<Int>?>?>(null) }
+    var exporting by remember { mutableStateOf(false) }
+    var exportMsg by remember { mutableStateOf<String?>(null) }
 
     val isThisBook = playerState.bookId == book.id && playerState.active
     val isPlaying = isThisBook && playerState.playing
 
     fun playChapter(ch: Int, from: Int) {
         val segs = index.segmentsOf(ch)
-        if (segs.isEmpty()) {
-            container.ttsConverter.convert(book, listOf(ch))
-            return
-        }
         if (segs.none { it.done }) {
             container.ttsConverter.convert(book, listOf(ch))
             return
         }
-        playingChapter = ch
+        manualChapter = ch
         container.ttsPlayer.play(book.id, ch, segs, from, dir)
         container.ttsPlayer.setSpeed(tts.speed)
+    }
+
+    // 转本章/转整本：已有音频时先确认
+    fun requestConvert(label: String, chapters: List<Int>?) {
+        val hasAudio = if (chapters == null) {
+            index.hasAnyChapterComplete()
+        } else {
+            chapters.any { ch -> index.segmentsOf(ch).any { it.done } }
+        }
+        if (hasAudio) pendingConvert = label to chapters
+        else container.ttsConverter.convert(book, chapters)
     }
 
     // 自动接下一章已移到 TtsPlayer（挂 nextChapterProvider），不依赖面板是否打开
@@ -245,10 +259,25 @@ fun TtsPanel(
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionChip("转本章") {
-                    container.ttsConverter.convert(book, listOf(currentChapter))
+                    requestConvert("本章", listOf(currentChapter))
                 }
                 ActionChip("转整本") {
-                    container.ttsConverter.convert(book, null)
+                    requestConvert("整本", null)
+                }
+                ActionChip(if (exporting) "导出中…" else "导出整本") {
+                    if (!exporting) {
+                        exporting = true
+                        container.ttsExporter.exportBook(book) { exporting = false }
+                    }
+                }
+                ActionChip(if (exporting) "导出中…" else "导出整本") {
+                    if (!exporting) {
+                        exporting = true
+                        container.ttsExporter.exportBook(book) { msg ->
+                            exporting = false
+                            exportMsg = msg
+                        }
+                    }
                 }
                 ActionChip(if (timerMinutes > 0) "定时 ${timerMinutes}分" else "定时 关") {
                     val next = when (timerMinutes) {
@@ -300,6 +329,37 @@ fun TtsPanel(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.width(38.dp)
+                )
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "边听边读",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(48.dp)
+                )
+                Switch(checked = tts.followReading, onCheckedChange = { v ->
+                    container.ttsSettings.update { it.copy(followReading = v) }
+                })
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "自动跳到正在读的段落并随播放翻页；关闭后可自由浏览，播放不中断",
+                    fontSize = 10.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            if (exportMsg != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    exportMsg!!,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -364,6 +424,7 @@ fun TtsPanel(
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
                                 // 跳文本 + 播放器定位到这一章；原本暂停就保持暂停
+                                manualChapter = ch
                                 onJumpToChapter(ch)
                                 val segs = index.segmentsOf(ch)
                                 if (segs.any { it.done }) {
@@ -430,6 +491,29 @@ fun TtsPanel(
                 index.save()
                 showVoicePicker = false
                 if (hadAudio) showReconvert = true
+            }
+        )
+    }
+
+    if (pendingConvert != null) {
+        val (label, chapters) = pendingConvert!!
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingConvert = null },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = { Text("重新转音频？") },
+            text = {
+                Text(
+                    "「$label」已经有转好的音频。\n\n选「是」会先暂停当前转换，删除这些音频、用当前音色重新合成；\n选「否」不做任何修改。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingConvert = null
+                    container.ttsConverter.reconvert(book, chapters)
+                }) { Text("是，重新转") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingConvert = null }) { Text("否") }
             }
         )
     }

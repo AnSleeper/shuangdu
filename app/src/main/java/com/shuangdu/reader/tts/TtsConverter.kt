@@ -62,6 +62,14 @@ class TtsConverter(
      * 换音色后重转：只重转「之前已经转好的那些章节」，绝不扩大到整本。
      * 当前有转换在跑时不打断，跑完后再自动执行。
      */
+    /** 用户主动要求重转：删掉指定章节（null=整本）的音频重新转。正在转换就先停掉它 */
+    fun reconvert(book: Book, chapters: List<Int>?) {
+        pause(book.id)
+        val index = indexOf(book)
+        index.resetChapters(chapters ?: index.completedChapters().ifEmpty { (0 until repo.chapterCount(book)).toList() })
+        convert(book, chapters)
+    }
+
     fun markReconvert(book: Book) {
         if (isRunning(book.id)) {
             pendingReconvert[book.id] = true

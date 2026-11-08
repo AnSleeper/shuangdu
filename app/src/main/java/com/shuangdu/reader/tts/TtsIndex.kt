@@ -137,6 +137,18 @@ class TtsIndex(private val dir: File) {
         save()
     }
 
+    /** 只重置指定章节：删这些章的音频文件、标记未转，其它章不动 */
+    fun resetChapters(targets: Collection<Int>) {
+        targets.forEach { ch ->
+            val list = chapters[ch] ?: return@forEach
+            for (i in list.indices) {
+                runCatching { audioFile(list[i].file).delete() }
+                list[i] = list[i].copy(done = false)
+            }
+        }
+        save()
+    }
+
     fun deleteAll() {
         runCatching { dir.deleteRecursively() }
         chapters.clear()

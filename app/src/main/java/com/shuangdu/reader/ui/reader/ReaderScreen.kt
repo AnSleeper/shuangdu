@@ -79,6 +79,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -288,14 +289,23 @@ fun ReaderScreen(
         return segs.firstOrNull()?.index ?: 0
     }
 
-    // 听书：高亮当前段 + 自动翻页
+    // 边听边读：播放跨章时自动跳文本到那一章（关闭跟读时不打扰，用户随便翻）
+    LaunchedEffect(playerState.bookId, playerState.chapter, ttsCfg.followReading) {
+        if (ttsCfg.followReading && playerState.bookId == book.id &&
+            playerState.chapter >= 0 && playerState.chapter != engine.chapterIndex
+        ) {
+            jumpToChapter(playerState.chapter)
+        }
+    }
+
+    // 边听边读：高亮当前段 + 自动翻页（跟读关闭时清除高亮、不翻页）
     var snapTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(
         playerState.bookId, playerState.chapter, playerState.segment,
-        engine.chapterIndex, pal, snapTick
+        engine.chapterIndex, pal, snapTick, ttsCfg.followReading
     ) {
         val src = engine.current as? PaginatedChapter ?: return@LaunchedEffect
-        val playingHere = playerState.bookId == book.id &&
+        val playingHere = ttsCfg.followReading && playerState.bookId == book.id &&
             playerState.chapter == engine.chapterIndex &&
             playerState.segment >= 0
         if (!playingHere) {
@@ -504,15 +514,14 @@ fun ReaderScreen(
             val margin = with(density) { 8.dp.toPx() }
             val yTop = with(density) { 150.dp.toPx() }
             val yBottom = screenH - pillH - with(density) { 130.dp.toPx() }
-            var dragX by remember { mutableFloatStateOf(0f) }
-            var dragY by remember { mutableFloatStateOf(0f) }
             var measuredW by remember { mutableFloatStateOf(0f) }
+            var pillPx by remember { mutableFloatStateOf(Float.NaN) }
+            var pillPy by remember { mutableFloatStateOf(Float.NaN) }
             val pillW = if (measuredW > 0f) measuredW else with(density) { 158.dp.toPx() }
             val baseX = if (ttsCfg.pillOnLeft) margin else screenW - pillW - margin
             val baseY = yTop + ttsCfg.pillYFraction * (yBottom - yTop)
-            val px = (baseX + dragX).coerceIn(margin, (screenW - pillW - margin).coerceAtLeast(margin))
-            val py = (baseY + dragY).coerceIn(yTop, yBottom.coerceAtLeast(yTop))
-
+            val px = (if (pillPx.isNaN()) baseX else pillPx).coerceIn(margin, (screenW - pillW - margin).coerceAtLeast(margin))
+            val py = (if (pillPy.isNaN()) baseY else pillPy).coerceIn(yTop, yBottom.coerceAtLeast(yTop))
             Row(
                 Modifier
                     .offset { IntOffset(px.roundToInt(), py.roundToInt()) }
@@ -521,18 +530,30 @@ fun ReaderScreen(
                     .pointerInput(Unit) {
                         detectDragGestures(
                             onDragEnd = {
-                                val onLeft = px + pillW / 2 < screenW / 2
-                                val yFrac = ((py - yTop) / (yBottom - yTop).coerceAtLeast(1f)).coerceIn(0f, 1f)
+                                // 松手：按当前位置吸附到较近的一侧，纵向比例记进设置
+                                val w = if (measuredW > 0f) measuredW else with(density) { 158.dp.toPx() }
+                                val curX = if (pillPx.isNaN()) baseX else pillPx
+                                val onLeft = curX + w / 2 < rootSize.width / 2f
+                                val snappedX = if (onLeft) margin else rootSize.width - w - margin
+                                val yF = ((if (pillPy.isNaN()) baseY else pillPy) - yTop)
+                                    .coerceIn(0f, (yBottom - yTop).coerceAtLeast(1f)) /
+                                    (yBottom - yTop).coerceAtLeast(1f)
+                                pillPx = snappedX
                                 container.ttsSettings.update {
-                                    it.copy(pillOnLeft = onLeft, pillYFraction = yFrac)
+                                    it.copy(pillOnLeft = onLeft, pillYFraction = yF)
                                 }
-                                dragX = 0f
-                                dragY = 0f
                             }
                         ) { change, amount ->
                             change.consume()
-                            dragX += amount.x
-                            dragY += amount.y
+                            val w = if (measuredW > 0f) measuredW else with(density) { 158.dp.toPx() }
+                            val maxX = (rootSize.width - w - margin).coerceAtLeast(margin)
+                            val curX = if (pillPx.isNaN()) {
+                                if (ttsCfg.pillOnLeft) margin else rootSize.width - w - margin
+                            } else pillPx
+                            val curY = if (pillPy.isNaN()) baseY else pillPy
+                            pillPx = (curX + amount.x).coerceIn(margin, maxX)
+                            pillPy = (curY + amount.y)
+                                .coerceIn(yTop, (rootSize.height - pillH - with(density) { 130.dp.toPx() }).coerceAtLeast(yTop))
                         }
                     }
                     .clip(RoundedCornerShape(50))
@@ -555,11 +576,21 @@ fun ReaderScreen(
                 )
                 Icon(
                     Icons.Rounded.CenterFocusStrong,
-                    "跳到正在读的段落",
-                    tint = Color.White,
+                    if (ttsCfg.followReading) "退出边听边读" else "边听边读（自动跟随播放翻页）",
+                    tint = if (ttsCfg.followReading) androidx.compose.material3.MaterialTheme.colorScheme.onPrimary else Color.White,
                     modifier = Modifier
-                        .size(21.dp)
-                        .clickable { snapTick++ }
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (ttsCfg.followReading) androidx.compose.material3.MaterialTheme.colorScheme.primary
+                            else Color.Transparent
+                        )
+                        .padding(2.dp)
+                        .clickable {
+                            val next = !ttsCfg.followReading
+                            container.ttsSettings.update { it.copy(followReading = next) }
+                            if (next) snapTick++
+                        }
                 )
                 Icon(
                     Icons.Rounded.Headphones,
@@ -750,6 +781,7 @@ private fun ScrollReader(
                 Modifier
                     .fillMaxWidth()
                     .height(with(density) { pageHeightPx.toDp() })
+                    .clipToBounds()
             ) {
                 drawIntoCanvas {
                     it.nativeCanvas.save()

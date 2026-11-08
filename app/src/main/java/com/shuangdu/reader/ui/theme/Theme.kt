@@ -61,7 +61,7 @@ private val INK_GREEN = SkinPalette(
     surface = Color(0xFF1C2219),
     surfaceVariant = Color(0xFF222A1E),
     text = Color(0xFFE6EADF),
-    sub = Color(0xFF9BA491),
+    sub = Color(0xFFB4BDA9),
     primary = Color(0xFF86B06A),
     onPrimary = Color(0xFF10200C),
     primaryContainer = Color(0xFF26321E),
@@ -70,7 +70,7 @@ private val INK_GREEN = SkinPalette(
     readBg = Color(0xFF27301F),
     readBg2 = Color(0xFF101610),
     readText = Color(0xFFDFE5D3),
-    readSub = Color(0xFF8C9681),
+    readSub = Color(0xFFB9C4A8),
     readLine = Color(0x3386B06A)
 )
 
@@ -81,7 +81,7 @@ private val DUSK_PINK = SkinPalette(
     surface = Color(0xFF34242A),
     surfaceVariant = Color(0xFF3E2C33),
     text = Color(0xFFF1E1E5),
-    sub = Color(0xFFB2969E),
+    sub = Color(0xFFCDB0B8),
     primary = Color(0xFFD98BA0),
     onPrimary = Color(0xFF2A1016),
     primaryContainer = Color(0xFF3E282D),
@@ -90,7 +90,7 @@ private val DUSK_PINK = SkinPalette(
     readBg = Color(0xFF2F2126),
     readBg2 = Color(0xFF180F12),
     readText = Color(0xFFEEDCE0),
-    readSub = Color(0xFFA98A93),
+    readSub = Color(0xFFD2B4BD),
     readLine = Color(0x33D98BA0)
 )
 
@@ -101,7 +101,7 @@ private val INK_BLUE = SkinPalette(
     surface = Color(0xFF222B3B),
     surfaceVariant = Color(0xFF2A3546),
     text = Color(0xFFDFE6EF),
-    sub = Color(0xFF95A2B3),
+    sub = Color(0xFFAFBDCE),
     primary = Color(0xFF7CA0CF),
     onPrimary = Color(0xFF0C1622),
     primaryContainer = Color(0xFF243248),
@@ -110,7 +110,7 @@ private val INK_BLUE = SkinPalette(
     readBg = Color(0xFF212B3B),
     readBg2 = Color(0xFF0E141C),
     readText = Color(0xFFD9E2EC),
-    readSub = Color(0xFF8B98A8),
+    readSub = Color(0xFFB6C4D8),
     readLine = Color(0x337CA0CF)
 )
 
@@ -121,7 +121,7 @@ private val BLACK = SkinPalette(
     surface = Color(0xFF0B0B0C),
     surfaceVariant = Color(0xFF161617),
     text = Color(0xFFEAEAEA),
-    sub = Color(0xFF9A9A9A),
+    sub = Color(0xFFA8A8A8),
     primary = Color(0xFF9DB4C4),
     onPrimary = Color(0xFF08141A),
     primaryContainer = Color(0xFF1C2529),
@@ -130,7 +130,7 @@ private val BLACK = SkinPalette(
     readBg = Color(0xFF000000),
     readBg2 = Color(0xFF000000),
     readText = Color(0xFFD2D2D2),
-    readSub = Color(0xFF7E7E7E),
+    readSub = Color(0xFFADADAD),
     readLine = Color(0x33FFFFFF)
 )
 

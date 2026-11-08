@@ -140,7 +140,11 @@ class BlockedChapter private constructor(
 
             fun newTextLayout(t: CharSequence): StaticLayout = StaticLayout.Builder
                 .obtain(t, 0, t.length, paint, width)
-                .setLineSpacing(0f, style.lineSpacingMult)
+                // 同 PaginatedChapter：垫行底空间，防 emoji/系统字体字形溢出行框
+                .setLineSpacing(
+                    (paint.fontMetrics.descent - paint.fontMetrics.ascent) * 0.16f,
+                    style.lineSpacingMult
+                )
                 .setIncludePad(false)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)

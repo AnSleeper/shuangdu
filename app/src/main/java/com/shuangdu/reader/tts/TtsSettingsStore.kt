@@ -15,7 +15,8 @@ data class TtsSettings(
     val showPill: Boolean = true,
     val pillOpacity: Float = 0.85f,
     val pillOnLeft: Boolean = false,
-    val pillYFraction: Float = 0.45f
+    val pillYFraction: Float = 0.45f,
+    val followReading: Boolean = false
 )
 
 class TtsSettingsStore(context: Context) {
@@ -66,7 +67,8 @@ class TtsSettingsStore(context: Context) {
             showPill = sp.getBoolean("showPill", d.showPill),
             pillOpacity = sp.getFloat("pillOpacity", d.pillOpacity).coerceIn(0.3f, 1f),
             pillOnLeft = sp.getBoolean("pillOnLeft", d.pillOnLeft),
-            pillYFraction = sp.getFloat("pillYFraction", d.pillYFraction).coerceIn(0f, 1f)
+            pillYFraction = sp.getFloat("pillYFraction", d.pillYFraction).coerceIn(0f, 1f),
+            followReading = sp.getBoolean("followReading", d.followReading)
         )
     }
 
@@ -83,6 +85,7 @@ class TtsSettingsStore(context: Context) {
             .putFloat("pillOpacity", next.pillOpacity)
             .putBoolean("pillOnLeft", next.pillOnLeft)
             .putFloat("pillYFraction", next.pillYFraction)
+            .putBoolean("followReading", next.followReading)
             .apply()
     }
 }

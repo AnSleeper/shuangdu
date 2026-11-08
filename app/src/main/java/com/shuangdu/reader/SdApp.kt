@@ -32,4 +32,5 @@ class AppContainer(context: Context) {
     val fishClient = FishAudioClient(fishKey)
     val ttsConverter by lazy { com.shuangdu.reader.tts.TtsConverter(repository, fishClient, fishKey, ttsSettings) }
     val ttsPlayer by lazy { com.shuangdu.reader.tts.TtsPlayer(appContext) }
+    val ttsExporter by lazy { com.shuangdu.reader.tts.TtsExporter(appContext, repository, ttsConverter) }
 }

@@ -216,7 +216,9 @@ class PaginatedChapter private constructor(
             }
             val layout = StaticLayout.Builder
                 .obtain(cs, 0, cs.length, paint, style.widthPx.coerceAtLeast(1))
-                .setLineSpacing(0f, style.lineSpacingMult)
+                // 每行额外垫一点行底空间：emoji / 系统字体的字形可能超出字体度量，
+                // 不垫的话相邻行会重叠（拖影）、页尾行会被裁一半
+                .setLineSpacing((rawFm.descent - rawFm.ascent) * 0.16f, style.lineSpacingMult)
                 .setIncludePad(false)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY)

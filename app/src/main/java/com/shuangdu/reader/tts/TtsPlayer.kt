@@ -129,7 +129,7 @@ class TtsPlayer(context: Context) {
 
     fun pause() {
         player.pause()
-        timerJob?.cancel() // 倒计时跟播放一起停
+        // ticker 不取消：暂停时冻结（不减秒），恢复后接着走
         publishTimer()
     }
 
@@ -152,7 +152,7 @@ class TtsPlayer(context: Context) {
         player.setPlaybackSpeed(speed.coerceIn(0.5f, 2.0f))
     }
 
-    // ---- 定时停止：倒计时只在播放时走，暂停就冻结 ----
+    // ---- 定时停止：ticker 常驻，只在播放时减秒（跨章重建播放列表也不会停摆） ----
 
     private val tickerScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main
@@ -176,16 +176,17 @@ class TtsPlayer(context: Context) {
         timerJob?.cancel()
         publishTimer()
         if (timerRemainingMs <= 0) return
-        if (!_state.value.playing) return
         timerJob = tickerScope.launch {
-            while (timerRemainingMs > 0 && _state.value.playing) {
+            while (timerRemainingMs > 0) {
                 delay(1000)
-                timerRemainingMs = (timerRemainingMs - 1000).coerceAtLeast(0)
-                publishTimer()
-            }
-            if (timerRemainingMs <= 0) {
-                player.pause()
-                publishTimer()
+                if (_state.value.playing) {
+                    timerRemainingMs = (timerRemainingMs - 1000).coerceAtLeast(0)
+                    publishTimer()
+                    if (timerRemainingMs <= 0) {
+                        player.pause()
+                        publishTimer()
+                    }
+                }
             }
         }
     }
