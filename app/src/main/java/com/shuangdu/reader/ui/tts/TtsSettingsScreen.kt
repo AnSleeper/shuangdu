@@ -231,7 +231,7 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                     Spacer(Modifier.height(24.dp))
                     SectionTitle("4. 并发数")
                     Text(
-                        "越大转得越快，但更容易触发限流。默认 5；被限流时程序会自动降并发并退避重试。",
+                        "越大转得越快。默认 20；实测 100 并发也无限流，但保守起见留了余量。触发限流时程序会自动退避重试。",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -241,8 +241,8 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                             onValueChange = { v ->
                                 container.ttsSettings.update { it.copy(concurrency = v.toInt().coerceIn(1, 7)) }
                             },
-                            valueRange = 1f..7f,
-                            steps = 5,
+                            valueRange = 1f..30f,
+                            steps = 28,
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(Modifier.width(10.dp))
