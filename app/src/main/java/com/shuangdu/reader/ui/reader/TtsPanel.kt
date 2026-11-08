@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,11 +22,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -34,16 +37,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,12 +52,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuangdu.reader.AppContainer
 import com.shuangdu.reader.data.Book
-import com.shuangdu.reader.tts.TtsSegment
 import com.shuangdu.reader.ui.tts.VoicePickerSheet
-import kotlinx.coroutines.delay
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TtsPanel(
     container: AppContainer,
@@ -84,6 +83,8 @@ fun TtsPanel(
     var pendingConvert by remember { mutableStateOf<Pair<String, List<Int>?>?>(null) }
     var exporting by remember { mutableStateOf(false) }
     var exportMsg by remember { mutableStateOf<String?>(null) }
+    var selectMode by remember { mutableStateOf(false) }
+    val selectedChapters = remember { androidx.compose.runtime.mutableStateListOf<Int>() }
 
     val isThisBook = playerState.bookId == book.id && playerState.active
     val isPlaying = isThisBook && playerState.playing
@@ -98,14 +99,14 @@ fun TtsPanel(
         container.ttsPlayer.setSpeed(tts.speed)
     }
 
-    // 转本章/转整本：已有音频时先确认
+    // 转本章/转整本：只有目标范围「全部转完」才询问重新转；部分完成直接补缺口
     fun requestConvert(label: String, chapters: List<Int>?) {
-        val hasAudio = if (chapters == null) {
-            index.hasAnyChapterComplete()
+        val allDone = if (chapters == null) {
+            chapterTitles.isNotEmpty() && chapterTitles.indices.all { index.isChapterComplete(it) }
         } else {
-            chapters.any { ch -> index.segmentsOf(ch).any { it.done } }
+            chapters.all { index.isChapterComplete(it) }
         }
-        if (hasAudio) pendingConvert = label to chapters
+        if (allDone) pendingConvert = label to chapters
         else container.ttsConverter.convert(book, chapters)
     }
 
@@ -246,28 +247,39 @@ fun TtsPanel(
                         )
                         if (p.running) {
                             TextButton(onClick = { container.ttsConverter.pause(book.id) }) { Text("暂停转换") }
-                        } else if (!p.finished) {
+                        } else if (!p.finished || p.failed > 0) {
                             TextButton(onClick = {
                                 container.ttsConverter.convert(book, null)
-                            }) { Text("继续转换") }
+                            }) { Text(if (p.failed > 0) "重试失败段" else "继续转换") }
                         }
+                    }
+                    if (p.failed > 0 && !p.running) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            if (p.finished) {
+                                "有 ${p.failed} 段没转成功（${p.lastError ?: "网络异常"}），可稍后点「重试失败段」补转"
+                            } else {
+                                "${p.failed} 段失败，程序会自动延时重试；也可暂停后稍候手动重试"
+                            },
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
 
             Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 ActionChip("转本章") {
                     requestConvert("本章", listOf(currentChapter))
                 }
                 ActionChip("转整本") {
                     requestConvert("整本", null)
-                }
-                ActionChip(if (exporting) "导出中…" else "导出整本") {
-                    if (!exporting) {
-                        exporting = true
-                        container.ttsExporter.exportBook(book) { exporting = false }
-                    }
                 }
                 ActionChip(if (exporting) "导出中…" else "导出整本") {
                     if (!exporting) {
@@ -401,14 +413,45 @@ fun TtsPanel(
             )
 
             Spacer(Modifier.height(14.dp))
-            Text(
-                "章节音频",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "章节音频",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = {
+                    selectMode = !selectMode
+                    selectedChapters.clear()
+                }) { Text(if (selectMode) "取消多选" else "多选章节", fontSize = 11.sp) }
+            }
+            if (selectMode) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ActionChip("全选") {
+                        selectedChapters.clear()
+                        selectedChapters.addAll(chapterTitles.indices)
+                    }
+                    ActionChip("从本章到末尾") {
+                        selectedChapters.clear()
+                        selectedChapters.addAll(currentChapter until chapterTitles.size)
+                    }
+                    ActionChip("清空") { selectedChapters.clear() }
+                    ActionChip("转选中 ${selectedChapters.size} 章") {
+                        if (selectedChapters.isNotEmpty()) {
+                            container.ttsConverter.convert(book, selectedChapters.sorted())
+                            selectMode = false
+                            selectedChapters.clear()
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            Spacer(Modifier.height(4.dp))
             LazyColumn(
-                Modifier.fillMaxWidth().heightIn(max = 300.dp),
+                Modifier.fillMaxWidth().heightIn(max = if (selectMode) 230.dp else 300.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 // 用进度当 key 的一部分，转换过程中列表状态能实时刷新
@@ -421,30 +464,51 @@ fun TtsPanel(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (selectMode && ch in selectedChapters) {
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                } else Color.Transparent
+                            )
                             .clickable {
-                                // 跳文本 + 播放器定位到这一章；原本暂停就保持暂停
-                                onJumpToChapter(ch)
-                                val segs = index.segmentsOf(ch)
-                                if (segs.any { it.done }) {
-                                    val wasPlaying = container.ttsPlayer.state.value.playing
-                                    container.ttsPlayer.play(book.id, ch, segs, 0, dir)
-                                    container.ttsPlayer.setSpeed(tts.speed)
-                                    if (!wasPlaying) container.ttsPlayer.pause()
+                                if (selectMode) {
+                                    if (ch in selectedChapters) selectedChapters.remove(ch)
+                                    else selectedChapters.add(ch)
+                                } else {
+                                    // 跳文本 + 播放器定位到这一章；原本暂停就保持暂停
+                                    onJumpToChapter(ch)
+                                    val segs = index.segmentsOf(ch)
+                                    if (segs.any { it.done }) {
+                                        val wasPlaying = container.ttsPlayer.state.value.playing
+                                        container.ttsPlayer.play(book.id, ch, segs, 0, dir)
+                                        container.ttsPlayer.setSpeed(tts.speed)
+                                        if (!wasPlaying) container.ttsPlayer.pause()
+                                    }
                                 }
                             }
                             .padding(horizontal = 6.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Rounded.Headphones,
-                            null,
-                            tint = when {
-                                complete -> MaterialTheme.colorScheme.primary
-                                done > 0 -> MaterialTheme.colorScheme.onSurfaceVariant
-                                else -> MaterialTheme.colorScheme.outline
-                            },
-                            modifier = Modifier.size(14.dp)
-                        )
+                        if (selectMode) {
+                            Icon(
+                                if (ch in selectedChapters) Icons.Rounded.CheckCircle
+                                else Icons.Rounded.RadioButtonUnchecked,
+                                null,
+                                tint = if (ch in selectedChapters) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        } else {
+                            Icon(
+                                Icons.Rounded.Headphones,
+                                null,
+                                tint = when {
+                                    complete -> MaterialTheme.colorScheme.primary
+                                    done > 0 -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    else -> MaterialTheme.colorScheme.outline
+                                },
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                         Spacer(Modifier.width(10.dp))
                         Text(
                             chapterTitles[ch].ifBlank { "第${ch + 1}章" },
@@ -465,7 +529,7 @@ fun TtsPanel(
                             color = if (complete) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (total > 0 && !complete) {
+                        if (total > 0 && !complete && !selectMode) {
                             TextButton(onClick = {
                                 container.ttsConverter.convert(book, listOf(ch))
                             }) { Text("转", fontSize = 11.sp) }

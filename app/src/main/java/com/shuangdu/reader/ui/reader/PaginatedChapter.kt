@@ -88,18 +88,28 @@ class PaginatedChapter private constructor(
         return idx
     }
 
+    /**
+     * 只画本页属于自己的行：clip 下边界取「本页最后一行的 bottom」，而不是整页高度。
+     * 否则下一页首行的上半截会漏进本页（被裁一半），下一页又完整出现一次。
+     */
     override fun drawPage(canvas: Canvas, page: Int) {
         if (pageStarts.isEmpty()) return
-        val first = pageStarts[page.coerceIn(0, pageStarts.size - 1)]
+        val p = page.coerceIn(0, pageStarts.size - 1)
+        val first = pageStarts[p]
+        val top = layout.getLineTop(first)
+        val nextStart = pageStarts.getOrNull(p + 1) ?: layout.lineCount
+        val lastLine = (nextStart - 1).coerceAtLeast(first)
+        val clipBottom = (layout.getLineBottom(lastLine) - top).coerceIn(1, pageHeight)
         canvas.save()
-        canvas.clipRect(0, 0, layout.width, pageHeight)
-        canvas.translate(0f, -layout.getLineTop(first).toFloat())
+        canvas.clipRect(0, 0, layout.width, clipBottom)
+        canvas.translate(0f, -top.toFloat())
         if (hlStart >= 0 && hlEnd > hlStart) {
             val from = layout.getLineForOffset(hlStart.coerceIn(0, layout.text.length - 1))
             val to = layout.getLineForOffset((hlEnd - 1).coerceIn(0, layout.text.length - 1))
             if (from in 0 until layout.lineCount && to in 0 until layout.lineCount) {
                 hlPaint.color = hlColor
                 for (l in from..to) {
+                    if (l < first || l > lastLine) continue
                     canvas.drawRect(
                         0f,
                         layout.getLineTop(l).toFloat(),
@@ -232,12 +242,15 @@ class PaginatedChapter private constructor(
             val usable = heightPx.coerceAtLeast(lineHeight)
 
             val starts = ArrayList<Int>(lineCount / 4 + 2)
+            // 留一行底部的余量：行底额外 spacing / 字体 descent 溢出不该被页边界切掉
+            val safety = (baseLine * 0.30f).toInt().coerceAtLeast(1)
+            val fitHeight = (usable - safety).coerceAtLeast(lineHeight)
             var line = 0
             while (line < lineCount) {
                 starts.add(line)
                 val top = layout.getLineTop(line)
                 var next = line
-                while (next < lineCount && layout.getLineBottom(next) - top <= usable) next++
+                while (next < lineCount && layout.getLineBottom(next) - top <= fitHeight) next++
                 line = if (next > line) next else line + 1
             }
             if (starts.isEmpty()) starts.add(0)

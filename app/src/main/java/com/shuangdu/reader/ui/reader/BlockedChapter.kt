@@ -35,6 +35,41 @@ class BlockedChapter private constructor(
         val dstWidth: Int
     ) : Op
 
+    private var hlPage = -1
+    private var hlOp: TextOp? = null
+    private var hlFrom = -1
+    private var hlTo = -1
+    private var hlColor = 0
+
+    /** 带图章节也支持听书高亮：在各个文字块里找朗读段落 */
+    override fun highlightByText(text: String, color: Int): Int {
+        hlPage = -1
+        hlOp = null
+        hlFrom = -1
+        hlTo = -1
+        if (text.isBlank()) return -1
+        for (pi in pages.indices) {
+            for (op in pages[pi]) {
+                if (op !is TextOp) continue
+                val hay = op.layout.text
+                var idx = hay.indexOf(text)
+                if (idx < 0 && text.length > 12) idx = hay.indexOf(text.take(12))
+                if (idx < 0) continue
+                val end = (idx + text.length - 1).coerceAtMost(hay.length - 1)
+                val from = op.layout.getLineForOffset(idx).coerceAtLeast(op.firstLine)
+                val to = op.layout.getLineForOffset(end).coerceAtMost(op.lastLine - 1)
+                if (from > to) continue
+                hlPage = pi
+                hlOp = op
+                hlFrom = from
+                hlTo = to
+                hlColor = color
+                return pageOffsets.getOrElse(pi) { 0 }
+            }
+        }
+        return -1
+    }
+
     override fun drawPage(canvas: Canvas, page: Int) {
         val ops = pages.getOrNull(page) ?: return
         for (op in ops) {
@@ -44,6 +79,18 @@ class BlockedChapter private constructor(
                     canvas.save()
                     canvas.clipRect(0, op.top, op.layout.width, op.top + (bottom - op.layout.getLineTop(op.firstLine)))
                     canvas.translate(0f, (op.top - op.layout.getLineTop(op.firstLine)).toFloat())
+                    if (op === hlOp && page == hlPage && hlFrom <= hlTo) {
+                        hlPaint.color = hlColor
+                        for (l in hlFrom..hlTo) {
+                            canvas.drawRect(
+                                0f,
+                                op.layout.getLineTop(l).toFloat(),
+                                op.layout.width.toFloat(),
+                                op.layout.getLineBottom(l).toFloat(),
+                                hlPaint
+                            )
+                        }
+                    }
                     op.layout.draw(canvas)
                     canvas.restore()
                 }
@@ -69,6 +116,7 @@ class BlockedChapter private constructor(
 
     companion object {
         private val IMAGE_PAINT = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        private val hlPaint = Paint()
         const val MARKER = '\u0001'
 
         fun hasImageMarker(text: String): Boolean = text.indexOf(MARKER) >= 0
@@ -170,18 +218,22 @@ class BlockedChapter private constructor(
                     val layout = newTextLayout(body)
                     val lineCount = layout.lineCount
                     var line = 0
-                    val base = charCursor
                     charCursor += body.length
                     while (line < lineCount) {
-                        if (y + lineHeight > usable) flush()
+                        fun lineH(l: Int) = layout.getLineBottom(l) - layout.getLineTop(l)
+                        // 用真实行高累加（含行底余量），否则下一块会压到上一块上形成拖影
+                        if (y + lineH(line) > usable && y > 0) flush()
                         val top = y
                         val first = line
                         var last = line
-                        while (last < lineCount && y + lineHeight <= usable) {
-                            y += lineHeight
+                        while (last < lineCount && y + lineH(last) <= usable) {
+                            y += lineH(last)
                             last++
                         }
-                        if (last == first) last = first + 1
+                        if (last == first) {
+                            y += lineH(first)
+                            last = first + 1
+                        }
                         ops.add(TextOp(layout, first, last, top))
                         line = last
                     }

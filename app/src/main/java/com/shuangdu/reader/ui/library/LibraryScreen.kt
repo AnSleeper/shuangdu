@@ -115,6 +115,11 @@ fun LibraryScreen(
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    // 音频状态：0=无 1=部分转好 2=整本转完。只在书籍列表或转换进度变化时重算
+    val audioStates = remember(books, ttsMap) {
+        books.associate { it.id to audioStateOf(container, it) }
+    }
+
     var menuOpen by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<List<Book>>(emptyList()) }
     var selectionMode by remember { mutableStateOf(false) }
@@ -359,12 +364,14 @@ fun LibraryScreen(
                         coverPath = container.repository.coverFile(book)?.absolutePath,
                         selectionMode = selectionMode,
                         selected = book.id in selected,
-                        audioReady = hasAudio(container, book),
+                        audioState = audioStates[book.id] ?: 0,
                         ttsRunning = p?.running == true,
                         ttsProgress = p?.let {
                             if (it.total <= 0) 0f else (it.done + it.failed).toFloat() / it.total
                         } ?: 0f,
-                        queueLabel = if (qIdx >= 0 && p?.running != true) "排队 #${qIdx + 1}" else null,
+                        queueLabel = if (qIdx >= 0 && p?.running != true && (audioStates[book.id] ?: 0) != 2) {
+                            "排队 #${qIdx + 1}"
+                        } else null,
                         onClick = {
                             if (selectionMode) {
                                 if (book.id in selected) selected.remove(book.id) else selected.add(book.id)
@@ -555,11 +562,14 @@ private fun GroupRow(label: String, onClick: () -> Unit) {
     }
 }
 
-/** 这本书有没有转好的音频（先看目录在不在，避免每本书都读 index） */
-private fun hasAudio(container: AppContainer, book: Book): Boolean {
+/** 0=无音频 1=部分转好 2=整本转完（先看目录在不在，避免每本书都读 index） */
+private fun audioStateOf(container: AppContainer, book: Book): Int {
     val dir = java.io.File(container.repository.bookDir(book.id), "tts")
-    if (!java.io.File(dir, "index.json").exists()) return false
-    return container.ttsConverter.indexOf(book).hasAnyChapterComplete()
+    if (!java.io.File(dir, "index.json").exists()) return 0
+    val index = container.ttsConverter.indexOf(book)
+    if (!index.hasAnyChapterComplete()) return 0
+    val total = container.repository.chapterCount(book)
+    return if (total > 0 && index.completedChapters().size >= total) 2 else 1
 }
 
 private fun collectDocs(context: android.content.Context, treeUri: Uri): List<Uri> {    val root = DocumentFile.fromTreeUri(context, treeUri) ?: return emptyList()
@@ -626,7 +636,7 @@ private fun BookCard(
     coverPath: String?,
     selectionMode: Boolean,
     selected: Boolean,
-    audioReady: Boolean,
+    audioState: Int,
     ttsRunning: Boolean,
     ttsProgress: Float,
     queueLabel: String?,
@@ -694,19 +704,25 @@ private fun BookCard(
                         .size(14.dp)
                 )
             }
-            if (audioReady && !selectionMode) {
+            // 整本转完：实心高亮耳机 + 主色圆底；部分转好：半透明描边感耳机 + 暗底
+            if (audioState > 0 && !selectionMode) {
+                val complete = audioState == 2
                 Box(
                     Modifier
                         .align(Alignment.TopStart)
                         .padding(6.dp)
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.45f))
+                        .background(
+                            if (complete) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                            else Color.Black.copy(alpha = 0.45f)
+                        )
                         .padding(3.dp)
                 ) {
                     Icon(
                         Icons.Rounded.Headphones,
-                        "已有音频",
-                        tint = Color(0xFF9FD8C0),
+                        if (complete) "整本已转完" else "部分章节已转",
+                        tint = if (complete) MaterialTheme.colorScheme.onPrimary
+                        else Color(0xFF9FD8C0).copy(alpha = 0.55f),
                         modifier = Modifier.size(11.dp)
                     )
                 }

@@ -70,7 +70,7 @@ class TtsSettingsStore(context: Context) {
             globalVoiceId = sp.getString("globalVoiceId", d.globalVoiceId).orEmpty(),
             globalVoiceName = sp.getString("globalVoiceName", d.globalVoiceName).orEmpty(),
             concurrency = cc.coerceIn(1, 30),
-            speed = sp.getFloat("speed", d.speed).coerceIn(0.6f, 1.6f),
+            speed = sp.getFloat("speed", d.speed).coerceIn(1.0f, 2.0f),
             showPill = sp.getBoolean("showPill", d.showPill),
             pillOpacity = sp.getFloat("pillOpacity", d.pillOpacity).coerceIn(0.3f, 1f),
             pillOnLeft = sp.getBoolean("pillOnLeft", d.pillOnLeft),

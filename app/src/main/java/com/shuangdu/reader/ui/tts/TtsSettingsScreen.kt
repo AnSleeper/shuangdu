@@ -96,9 +96,18 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Rounded.ArrowBackIosNew, "返回", modifier = Modifier.size(19.dp))
+                    Icon(
+                        Icons.Rounded.ArrowBackIosNew,
+                        "返回",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(19.dp)
+                    )
                 }
-                Text("听书设置", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "听书设置",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
 
             LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp)) {
@@ -209,7 +218,8 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                             Text(
                                 tts.globalVoiceName.ifBlank { "还没有选择音色" },
                                 style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
                                 if (tts.globalVoiceId.isBlank()) "点击从社区音色库里挑一个" else tts.globalVoiceId,
@@ -239,14 +249,18 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                         Slider(
                             value = tts.concurrency.toFloat(),
                             onValueChange = { v ->
-                                container.ttsSettings.update { it.copy(concurrency = v.toInt().coerceIn(1, 7)) }
+                                container.ttsSettings.update { it.copy(concurrency = v.toInt().coerceIn(1, 30)) }
                             },
                             valueRange = 1f..30f,
                             steps = 28,
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(Modifier.width(10.dp))
-                        Text("${tts.concurrency}", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "${tts.concurrency}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
 
@@ -342,6 +356,7 @@ fun TtsSettingsScreen(container: AppContainer, onBack: () -> Unit) {
                                         Text(
                                             u.second,
                                             style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
@@ -401,6 +416,7 @@ private fun SectionTitle(text: String) {
         text,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.padding(bottom = 6.dp)
     )
 }
@@ -488,6 +504,7 @@ fun VoicePickerSheet(
             Text(
                 "选择音色",
                 style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 20.dp, bottom = 10.dp)
             )
             OutlinedTextField(
