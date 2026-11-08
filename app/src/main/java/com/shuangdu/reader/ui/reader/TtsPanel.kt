@@ -82,7 +82,8 @@ fun TtsPanel(
     // 待确认的重转请求（label, chapters）
     var pendingConvert by remember { mutableStateOf<Pair<String, List<Int>?>?>(null) }
     var exporting by remember { mutableStateOf(false) }
-    var exportMsg by remember { mutableStateOf<String?>(null) }
+    var exportResult by remember { mutableStateOf<com.shuangdu.reader.tts.TtsExporter.Result?>(null) }
+    var showExportDialog by remember { mutableStateOf(false) }
     var selectMode by remember { mutableStateOf(false) }
     val selectedChapters = remember { androidx.compose.runtime.mutableStateListOf<Int>() }
 
@@ -284,9 +285,10 @@ fun TtsPanel(
                 ActionChip(if (exporting) "导出中…" else "导出整本") {
                     if (!exporting) {
                         exporting = true
-                        container.ttsExporter.exportBook(book) { msg ->
+                        container.ttsExporter.exportBook(book) { result ->
                             exporting = false
-                            exportMsg = msg
+                            exportResult = result
+                            showExportDialog = true
                         }
                     }
                 }
@@ -363,12 +365,15 @@ fun TtsPanel(
                 )
             }
 
-            if (exportMsg != null) {
+            if (exportResult != null) {
+                val r = exportResult!!
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    exportMsg!!,
+                    if (r.success) "上次导出：${r.fileName}（${r.segmentCount} 段）"
+                    else "上次导出失败：${r.error ?: "未知错误"}",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (r.success) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.error,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -537,6 +542,29 @@ fun TtsPanel(
                     }
                 }
             }
+        }
+    }
+
+    // 导出结束提醒：成功写清文件名 / 段数 / 保存位置，失败写清原因
+    if (showExportDialog) {
+        exportResult?.let { r ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showExportDialog = false },
+                containerColor = MaterialTheme.colorScheme.surface,
+                title = { Text(if (r.success) "导出完成" else "导出失败") },
+                text = {
+                    Text(
+                        if (r.success) {
+                            "文件：${r.fileName}\n共合并 ${r.segmentCount} 段音频\n保存位置：${r.location}"
+                        } else {
+                            r.error ?: "未知错误"
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showExportDialog = false }) { Text("知道了") }
+                }
+            )
         }
     }
 
