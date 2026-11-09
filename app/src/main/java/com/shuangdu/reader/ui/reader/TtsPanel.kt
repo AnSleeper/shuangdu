@@ -37,9 +37,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,7 +54,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuangdu.reader.AppContainer
 import com.shuangdu.reader.data.Book
+import com.shuangdu.reader.tts.VoiceStats
 import com.shuangdu.reader.ui.tts.VoicePickerSheet
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -76,6 +82,10 @@ fun TtsPanel(
 
     var showVoicePicker by remember { mutableStateOf(false) }
     var showReconvert by remember { mutableStateOf(false) }
+    // 音色统计：已转的段里有多少是当前音色 / 别的音色 / 来源未知
+    var stats by remember(book.id) { mutableStateOf<VoiceStats?>(null) }
+    var voiceTick by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
     // 播放器在播这本书时以播放器的章节为准；没在播则跟随当前阅读章
     val playingChapter =
         if (playerState.bookId == book.id && playerState.chapter >= 0) playerState.chapter else currentChapter
@@ -89,6 +99,11 @@ fun TtsPanel(
 
     val isThisBook = playerState.bookId == book.id && playerState.active
     val isPlaying = isThisBook && playerState.playing
+
+    // 转换结束或换了音色就重算一次（转换中不逐段重算，避免 15000 段的书每段扫一遍）
+    LaunchedEffect(book.id, voiceTick, tts.globalVoiceId, prog?.finished, prog?.running) {
+        stats = withContext(Dispatchers.IO) { index.voiceStats(container.ttsSettings.current.globalVoiceId) }
+    }
 
     fun playChapter(ch: Int, from: Int) {
         val segs = index.segmentsOf(ch)
@@ -117,7 +132,7 @@ fun TtsPanel(
     val timerMinutes = playerState.timerMinutes
     val timerRemaining = playerState.timerRemainingMs
 
-    val chaptersWithAudio = index.completedChapters()
+    val chaptersWithAudioCount = index.completedChapterCount()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -136,7 +151,7 @@ fun TtsPanel(
                 Text("听书", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "已有音频 ${chaptersWithAudio.size} 章",
+                    "已有音频 $chaptersWithAudioCount 章",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -172,6 +187,33 @@ fun TtsPanel(
                             it.copy(globalVoiceId = index.voiceId, globalVoiceName = index.voiceName)
                         }
                     }) { Text("设为全局") }
+                }
+            }
+
+            // 混音提示：已经转好的音频里有别的音色 / 来源不明的段
+            val s = stats
+            if (s != null && s.needsAttention) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        buildString {
+                            append("已转 ${s.totalDone} 段")
+                            if (s.other > 0) append("，其中 ${s.other} 段是别的音色")
+                            if (s.unknown > 0) append(if (s.other > 0) "、${s.unknown} 段来源未知" else "，其中 ${s.unknown} 段来源未知（旧版本转的）")
+                        },
+                        fontSize = 10.5.sp,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (s.other > 0) {
+                        TextButton(onClick = {
+                            container.ttsConverter.reconvertStaleVoice(book, includeUnknown = false)
+                        }) { Text("统一音色", fontSize = 11.sp) }
+                    } else {
+                        TextButton(onClick = {
+                            container.ttsConverter.reconvertStaleVoice(book, includeUnknown = true)
+                        }) { Text("全部重转", fontSize = 11.sp) }
+                    }
                 }
             }
 
@@ -234,14 +276,14 @@ fun TtsPanel(
                     Spacer(Modifier.height(10.dp))
                     if (p.total > 0) {
                         LinearProgressIndicator(
-                            progress = { if (p.total == 0) 0f else (p.done + p.failed).toFloat() / p.total },
+                            progress = { p.fraction },
                             modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape)
                         )
                         Spacer(Modifier.height(6.dp))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            p.message ?: "正在转换 ${p.done + p.failed}/${p.total}（第 ${p.chapter + 1} 章）",
+                            p.message ?: "正在转换 ${p.processed}/${p.total}（第 ${p.chapter + 1} 章）",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
@@ -574,13 +616,19 @@ fun TtsPanel(
             currentId = index.voiceId.ifBlank { tts.globalVoiceId },
             onDismiss = { showVoicePicker = false },
             onPick = { v ->
-                val hadAudio = index.completedChapters().isNotEmpty() ||
-                    container.ttsConverter.isRunning(book.id)
+                // 先落地音色（正在跑的任务下一次合成就会用到新音色），再统计已转音频的情况
                 index.voiceId = v.id
                 index.voiceName = v.title
-                index.save()
                 showVoicePicker = false
-                if (hadAudio) showReconvert = true
+                scope.launch {
+                    withContext(Dispatchers.IO) { index.save() }
+                    val s = withContext(Dispatchers.IO) {
+                        index.voiceStats(container.ttsSettings.current.globalVoiceId)
+                    }
+                    stats = s
+                    voiceTick++
+                    if (s.needsAttention) showReconvert = true
+                }
             }
         )
     }
@@ -593,13 +641,14 @@ fun TtsPanel(
             title = { Text("重新转音频？") },
             text = {
                 Text(
-                    "「$label」已经有转好的音频。\n\n选「是」会先暂停当前转换，删除这些音频、用当前音色重新合成；\n选「否」不做任何修改。"
+                    "「$label」已经有转好的音频。\n\n选「是」会用当前音色重新合成这些段，转好一段覆盖一段；" +
+                        "失败的段会保留原来的音频，不会先删。\n选「否」不做任何修改。"
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     pendingConvert = null
-                    container.ttsConverter.reconvert(book, chapters)
+                    container.ttsConverter.reconvertChapters(book, chapters)
                 }) { Text("是，重新转") }
             },
             dismissButton = {
@@ -609,20 +658,36 @@ fun TtsPanel(
     }
 
     if (showReconvert) {
+        val s = stats
+        val other = s?.other ?: 0
+        val unknown = s?.unknown ?: 0
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showReconvert = false },
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("音色已更换") },
             text = {
                 Text(
-                    "这本书已经转好的音频还是旧音色读的。\n\n要删掉这些音频、用新音色重新转换吗？\n（正在进行的转换不会被打断，跑完后会自动重转）\n\n选「先不重转」的话，之后新转的段落会用新音色，前后音色会不一致。"
+                    when {
+                        other > 0 ->
+                            "这本书有 $other 段已经转好的音频是旧音色。\n\n" +
+                                "现在重转吗？重转是覆盖写：转好一段顶掉一段，失败会保留旧音频，不会先删文件。" +
+                                "正在进行的转换不会被打断，会直接用新音色接着转。\n\n" +
+                                "选「先不重转」的话，新旧音色会混在一本书里。"
+                        unknown > 0 ->
+                            "这本书有 $unknown 段是旧版本转的，来源未知（分不清是什么音色）。\n\n" +
+                                "要用新音色把这些也一起重转吗？这一步会消耗额度。"
+                        else ->
+                            "这本书还没有已转好的音频，新音色只影响之后转的段。"
+                    }
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    showReconvert = false
-                    container.ttsConverter.markReconvert(book)
-                }) { Text("删除并重转") }
+                if (other > 0 || unknown > 0) {
+                    TextButton(onClick = {
+                        showReconvert = false
+                        container.ttsConverter.reconvertStaleVoice(book, includeUnknown = other == 0)
+                    }) { Text(if (other > 0) "重转这 $other 段" else "全部重转") }
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showReconvert = false }) { Text("先不重转") }

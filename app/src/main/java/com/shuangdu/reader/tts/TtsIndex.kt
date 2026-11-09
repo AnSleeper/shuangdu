@@ -4,85 +4,105 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-/** 一句/一段音频。file 是相对 tts 目录的文件名 */
+/** 一句/一段音频。file 是相对 tts 目录的文件名；voice 是转这段时用的音色 id（空 = 未知，1.3.10 及更早转的） */
 data class TtsSegment(
     val index: Int,
     val text: String,
     val file: String,
     val durationMs: Long = 0L,
-    val done: Boolean = false
+    val done: Boolean = false,
+    val voice: String = ""
 )
+
+/** 已转音频按音色归类：当前音色 / 别的音色（真混音）/ 来源未知（老版本转的） */
+data class VoiceStats(
+    val current: Int,
+    val other: Int,
+    val unknown: Int
+) {
+    val totalDone: Int get() = current + other + unknown
+    val needsAttention: Boolean get() = other > 0 || unknown > 0
+}
 
 /**
  * 一本书的听书索引：章节 -> 段落列表。
  * 存在 books/<id>/tts/index.json，音频存在同目录。
+ *
+ * 线程模型：转换时最多 20 个协程并发写，所以所有对 chapters / 统计的读写都在 lock 里，
+ * 统计一律「从段列表重算」而不是增量 +1 —— 增量在并发下会丢更新，把章节永远卡在 149/150。
  */
 class TtsIndex(private val dir: File) {
 
+    private val lock = Any()
     private val file = File(dir, "index.json")
     private val chapters = LinkedHashMap<Int, MutableList<TtsSegment>>()
 
-    /**
-     * 增量维护的统计：每章已完成段数、已完成章集合。
-     * 这样 isChapterComplete / hasAnyChapterComplete / completedChapterCount 都是 O(1)，
-     * 书架判断「部分/整本」不必每次遍历全书所有段。
-     */
+    /** 增量维护的派生统计，只在 lock 内改；值永远由段列表重算，不靠自增 */
     private val donePerChapter = HashMap<Int, Int>()
     private val completeChapters = HashSet<Int>()
 
     /** 这本书用的音色（留空表示跟随全局） */
+    @Volatile
     var voiceId: String = ""
+    @Volatile
     var voiceName: String = ""
     private var loaded = false
 
     fun audioFile(name: String): File = File(dir, name)
 
     fun load() {
-        if (loaded) return
-        loaded = true
-        dir.mkdirs()
-        if (!file.exists()) return
-        runCatching {
-            val root = JSONObject(file.readText())
-            voiceId = root.optString("voiceId")
-            voiceName = root.optString("voiceName")
-            val arr = root.optJSONArray("chapters") ?: return@runCatching
-            for (i in 0 until arr.length()) {
-                val ch = arr.optJSONObject(i) ?: continue
-                val idx = ch.optInt("c", -1)
-                if (idx < 0) continue
-                val segs = ch.optJSONArray("segs") ?: continue
-                val list = ArrayList<TtsSegment>(segs.length())
-                for (j in 0 until segs.length()) {
-                    val s = segs.optJSONObject(j) ?: continue
-                    list.add(
-                        TtsSegment(
-                            index = s.optInt("i", j),
-                            text = s.optString("t"),
-                            file = s.optString("f"),
-                            durationMs = s.optLong("d", 0L),
-                            done = s.optBoolean("ok", false) && audioFile(s.optString("f")).exists()
+        synchronized(lock) {
+            if (loaded) return
+            loaded = true
+            dir.mkdirs()
+            if (!file.exists()) return
+            runCatching {
+                val root = JSONObject(file.readText())
+                voiceId = root.optString("voiceId")
+                voiceName = root.optString("voiceName")
+                val arr = root.optJSONArray("chapters") ?: return@runCatching
+                for (i in 0 until arr.length()) {
+                    val ch = arr.optJSONObject(i) ?: continue
+                    val idx = ch.optInt("c", -1)
+                    if (idx < 0) continue
+                    val segs = ch.optJSONArray("segs") ?: continue
+                    val list = ArrayList<TtsSegment>(segs.length())
+                    for (j in 0 until segs.length()) {
+                        val s = segs.optJSONObject(j) ?: continue
+                        val name = s.optString("f")
+                        list.add(
+                            TtsSegment(
+                                index = s.optInt("i", j),
+                                text = s.optString("t"),
+                                file = name,
+                                durationMs = s.optLong("d", 0L),
+                                done = s.optBoolean("ok", false) && audioFile(name).exists(),
+                                voice = s.optString("voice", "")
+                            )
                         )
-                    )
+                    }
+                    chapters[idx] = list
                 }
-                chapters[idx] = list
+                recomputeStats()
             }
-            recomputeStats()
         }
     }
 
-    /** 全量重算统计（load 后、批量重置后调用） */
+    /** 全量重算（load 后调用）。必须在 lock 内 */
     private fun recomputeStats() {
         donePerChapter.clear()
         completeChapters.clear()
-        chapters.forEach { (ch, segs) ->
-            val done = segs.count { it.done }
-            donePerChapter[ch] = done
-            if (segs.isNotEmpty() && done == segs.size) completeChapters.add(ch)
-        }
+        chapters.forEach { (ch, segs) -> recountChapter(ch, segs) }
     }
 
-    /** 单章统计刷新（切分新章、重置某章后调用） */
+    /** 单章统计重算：直接数 done，不做增量。必须在 lock 内 */
+    private fun recountChapter(chapter: Int, segs: List<TtsSegment>) {
+        val done = segs.count { it.done }
+        donePerChapter[chapter] = done
+        if (segs.isNotEmpty() && done == segs.size) completeChapters.add(chapter)
+        else completeChapters.remove(chapter)
+    }
+
     private fun refreshChapterStats(chapter: Int) {
         val segs = chapters[chapter]
         if (segs == null) {
@@ -90,115 +110,142 @@ class TtsIndex(private val dir: File) {
             completeChapters.remove(chapter)
             return
         }
-        val done = segs.count { it.done }
-        donePerChapter[chapter] = done
-        if (segs.isNotEmpty() && done == segs.size) completeChapters.add(chapter)
-        else completeChapters.remove(chapter)
+        recountChapter(chapter, segs)
     }
 
     fun save() {
-        runCatching {
-            dir.mkdirs()
-            val root = JSONObject()
-            val arr = JSONArray()
-            chapters.forEach { (idx, segs) ->
-                val ch = JSONObject()
-                ch.put("c", idx)
-                val segArr = JSONArray()
-                segs.forEach { s ->
-                    segArr.put(
-                        JSONObject()
-                            .put("i", s.index)
-                            .put("t", s.text)
-                            .put("f", s.file)
-                            .put("d", s.durationMs)
-                            .put("ok", s.done)
-                    )
+        synchronized(lock) {
+            runCatching {
+                dir.mkdirs()
+                val root = JSONObject()
+                val arr = JSONArray()
+                chapters.forEach { (idx, segs) ->
+                    val ch = JSONObject()
+                    ch.put("c", idx)
+                    val segArr = JSONArray()
+                    segs.forEach { s ->
+                        segArr.put(
+                            JSONObject()
+                                .put("i", s.index)
+                                .put("t", s.text)
+                                .put("f", s.file)
+                                .put("d", s.durationMs)
+                                .put("ok", s.done)
+                                .put("voice", s.voice)
+                        )
+                    }
+                    ch.put("segs", segArr)
+                    arr.put(ch)
                 }
-                ch.put("segs", segArr)
-                arr.put(ch)
+                root.put("voiceId", voiceId)
+                root.put("voiceName", voiceName)
+                root.put("chapters", arr)
+                val tmp = File(dir, "index.json.tmp")
+                tmp.writeText(root.toString())
+                // rename 覆盖是原子的；失败才退化成「删了再改名」，避免中途留下没有索引的状态
+                if (!tmp.renameTo(file)) {
+                    file.delete()
+                    tmp.renameTo(file)
+                }
             }
-            root.put("voiceId", voiceId)
-            root.put("voiceName", voiceName)
-            root.put("chapters", arr)
-            val tmp = File(dir, "index.json.tmp")
-            tmp.writeText(root.toString())
-            if (file.exists()) file.delete()
-            tmp.renameTo(file)
         }
     }
 
-    fun segmentsOf(chapter: Int): List<TtsSegment> = chapters[chapter].orEmpty()
+    /** 返回副本：播放器/导出线程会遍历它，不能把内部可变表交出去 */
+    fun segmentsOf(chapter: Int): List<TtsSegment> = synchronized(lock) {
+        chapters[chapter]?.toList().orEmpty()
+    }
+
+    fun segmentIndices(chapter: Int): List<Int> = synchronized(lock) {
+        chapters[chapter]?.map { it.index }.orEmpty()
+    }
 
     /** 没建过就按正文切分建一份 */
     fun ensureChapter(chapter: Int, text: String, title: String = ""): List<TtsSegment> {
         load()
-        val existing = chapters[chapter]
-        if (existing != null && existing.isNotEmpty()) return existing
-        val segs = Segmenter.split(chapter, text, title)
-        chapters[chapter] = segs.toMutableList()
-        refreshChapterStats(chapter)
-        return chapters[chapter]!!
-    }
-
-    fun update(chapter: Int, segment: TtsSegment) {
-        val list = chapters[chapter] ?: return
-        val i = list.indexOfFirst { it.index == segment.index }
-        if (i < 0) return
-        val before = list[i].done
-        list[i] = segment
-        if (before != segment.done) {
-            val done = (donePerChapter[chapter] ?: 0) + if (segment.done) 1 else -1
-            donePerChapter[chapter] = done
-            if (done >= list.size) completeChapters.add(chapter) else completeChapters.remove(chapter)
+        synchronized(lock) {
+            val existing = chapters[chapter]
+            if (existing != null && existing.isNotEmpty()) return existing.toList()
+            val segs = Segmenter.split(chapter, text, title)
+            chapters[chapter] = segs.toMutableList()
+            refreshChapterStats(chapter)
+            return chapters[chapter]!!.toList()
         }
     }
 
-    fun chapterProgress(chapter: Int): Pair<Int, Int> {
+    /** 一段转好了：标记 done 并记下用的音色 */
+    fun markDone(chapter: Int, segmentIndex: Int, voice: String) {
+        synchronized(lock) {
+            val list = chapters[chapter] ?: return
+            val i = list.indexOfFirst { it.index == segmentIndex }
+            if (i < 0) return
+            list[i] = list[i].copy(done = true, voice = voice)
+            refreshChapterStats(chapter)
+        }
+    }
+
+    fun chapterProgress(chapter: Int): Pair<Int, Int> = synchronized(lock) {
         val total = chapters[chapter]?.size ?: 0
-        return (donePerChapter[chapter] ?: 0) to total
+        (donePerChapter[chapter] ?: 0) to total
     }
 
-    fun isChapterComplete(chapter: Int): Boolean = chapter in completeChapters
+    fun isChapterComplete(chapter: Int): Boolean = synchronized(lock) { chapter in completeChapters }
 
-    fun hasAnyChapterComplete(): Boolean = completeChapters.isNotEmpty()
+    fun hasAnyChapterComplete(): Boolean = synchronized(lock) { completeChapters.isNotEmpty() }
 
-    /** 已完成章数（O(1)） */
-    fun completedChapterCount(): Int = completeChapters.size
+    fun completedChapterCount(): Int = synchronized(lock) { completeChapters.size }
 
-    fun completedChapters(): List<Int> = completeChapters.toList()
+    fun completedChapters(): List<Int> = synchronized(lock) { completeChapters.sorted() }
 
-    /** 换音色后重转：删掉所有音频文件，段落全部标记为未转 */
-    fun resetAudio() {
-        runCatching {
-            dir.listFiles()?.forEach { if (it.name != "index.json" && it.name != "index.json.tmp") it.delete() }
-        }
-        chapters.forEach { (_, list) ->
-            for (i in list.indices) list[i] = list[i].copy(done = false)
-        }
-        recomputeStats()
-        save()
-    }
+    /** 段落实际用的音色：本书专用优先，否则跟随全局 */
+    fun effectiveVoiceId(globalVoiceId: String): String = voiceId.ifBlank { globalVoiceId }
 
-    /** 只重置指定章节：删这些章的音频文件、标记未转，其它章不动 */
-    fun resetChapters(targets: Collection<Int>) {
-        targets.forEach { ch ->
-            val list = chapters[ch] ?: return@forEach
-            for (i in list.indices) {
-                runCatching { audioFile(list[i].file).delete() }
-                list[i] = list[i].copy(done = false)
+    fun voiceStats(globalVoiceId: String): VoiceStats = synchronized(lock) {
+        val cur = effectiveVoiceId(globalVoiceId)
+        var other = 0
+        var unknown = 0
+        var same = 0
+        chapters.values.forEach { list ->
+            for (s in list) {
+                if (!s.done) continue
+                when {
+                    s.voice.isBlank() -> unknown++
+                    s.voice == cur -> same++
+                    else -> other++
+                }
             }
-            refreshChapterStats(ch)
         }
-        save()
+        VoiceStats(current = same, other = other, unknown = unknown)
     }
+
+    /**
+     * 需要重转的段（章, 段号）。
+     * - voice 是别的音色 → 真混音，默认纳入
+     * - voice 为空（老数据）→ 只有 includeUnknown 时才纳入，绝不默认动
+     */
+    fun segmentsWithStaleVoice(globalVoiceId: String, includeUnknown: Boolean): List<Pair<Int, Int>> =
+        synchronized(lock) {
+            val cur = effectiveVoiceId(globalVoiceId)
+            val out = ArrayList<Pair<Int, Int>>()
+            chapters.forEach { (ch, list) ->
+                for (s in list) {
+                    if (!s.done) continue
+                    if (s.voice.isNotBlank() && s.voice == cur) continue
+                    if (s.voice.isBlank() && !includeUnknown) continue
+                    out.add(ch to s.index)
+                }
+            }
+            out
+        }
 
     fun deleteAll() {
-        runCatching { dir.deleteRecursively() }
-        chapters.clear()
-        donePerChapter.clear()
-        completeChapters.clear()
-        loaded = false
+        synchronized(lock) {
+            runCatching { dir.deleteRecursively() }
+            chapters.clear()
+            donePerChapter.clear()
+            completeChapters.clear()
+            loaded = false
+        }
     }
 }
 

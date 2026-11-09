@@ -201,8 +201,11 @@ fun LibraryScreen(
                     val targets = books.filter { it.id in selected }
                     if (targets.isEmpty()) return@IconButton
                     exitSelection()
-                    onNotify("已加入转换队列：${targets.size} 本（书架封面显示进度）")
-                    container.ttsConverter.convertMany(targets)
+                    val added = container.ttsConverter.convertMany(targets)
+                    onNotify(
+                        if (added > 0) "已加入转换队列：$added 本（书架封面显示进度）"
+                        else "这些书已经在队列里了"
+                    )
                 }) {
                     Icon(Icons.Rounded.Headphones, "转音频", tint = MaterialTheme.colorScheme.onBackground)
                 }
@@ -380,12 +383,8 @@ fun LibraryScreen(
                         selected = book.id in selected,
                         audioState = audioStates[book.id] ?: 0,
                         ttsRunning = p?.running == true,
-                        ttsProgress = p?.let {
-                            if (it.total <= 0) 0f else (it.done + it.failed).toFloat() / it.total
-                        } ?: 0f,
-                        queueLabel = if (qIdx >= 0 && p?.running != true && (audioStates[book.id] ?: 0) != 2) {
-                            "排队 #${qIdx + 1}"
-                        } else null,
+                        ttsProgress = p?.fraction ?: 0f,
+                        queueLabel = if (qIdx >= 0 && p?.running != true) "排队 #${qIdx + 1}" else null,
                         onClick = {
                             if (selectionMode) {
                                 if (book.id in selected) selected.remove(book.id) else selected.add(book.id)
@@ -840,7 +839,7 @@ private fun BookCard(
                         .padding(horizontal = 5.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        "转 ${(ttsProgress * 100).toInt()}%",
+                        "转 ${(ttsProgress.coerceIn(0f, 1f) * 100).toInt()}%",
                         fontSize = 8.sp,
                         color = Color(0xFF9FD8C0)
                     )
