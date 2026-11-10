@@ -528,10 +528,17 @@ class TtsConverter(
         var attempts = 0
         var backoff = 5000L
         var lastMsg: String? = null
+        // 方括号会被 Fish Audio 当成「演法提示」，中文小说里的 [系统提示] 会变成杂音
+        val speakable = TtsText.sanitize(seg.text)
+        if (speakable.isBlank()) {
+            // 整段只有标记符号，没什么可念的，直接当成功跳过（否则会无限重试）
+            android.util.Log.w("TtsConverter", "段 ${seg.file} 清洗后为空，跳过")
+            return null
+        }
         while (true) {
             awaitGate()
             val result = client.synthesize(
-                text = seg.text,
+                text = speakable,
                 voiceId = voiceId,
                 modelId = tts.modelId
             )
