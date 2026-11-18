@@ -196,6 +196,21 @@ class TtsConverter(
     }
 
     /**
+     * 重转「原文里含括号」的段。
+     * 1.4.2 之前送合成时没清洗括号，Fish Audio 把里面的字当演法提示，转出来是杂音。
+     * 只挑已经转好的段（没转的以后自然用清洗过的文本转）。
+     */
+    fun reconvertBracketSegments(book: Book) {
+        if (keyStore.load() == null) return
+        scope.launch {
+            val index = indexOf(book)
+            val targets = index.doneSegmentsWithBracketText()
+            if (targets.isEmpty()) return@launch
+            enqueue(book, targets.map { key(it.first, it.second) })
+        }
+    }
+
+    /**
      * 把「不是当前音色」的段重转一遍。
      * [includeUnknown] 为 true 时连「来源未知」的老段也一起（会消耗额度，界面上必须明确询问）。
      */

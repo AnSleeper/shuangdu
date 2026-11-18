@@ -84,6 +84,8 @@ fun TtsPanel(
     var showReconvert by remember { mutableStateOf(false) }
     // 音色统计：已转的段里有多少是当前音色 / 别的音色 / 来源未知
     var stats by remember(book.id) { mutableStateOf<VoiceStats?>(null) }
+    // 已转好、但原文含括号（1.4.2 之前转出来是杂音）的段数
+    var bracketCount by remember(book.id) { mutableStateOf(0) }
     var voiceTick by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
     // 播放器在播这本书时以播放器的章节为准；没在播则跟随当前阅读章
@@ -102,7 +104,12 @@ fun TtsPanel(
 
     // 转换结束或换了音色就重算一次（转换中不逐段重算，避免 15000 段的书每段扫一遍）
     LaunchedEffect(book.id, voiceTick, tts.globalVoiceId, prog?.finished, prog?.running) {
-        stats = withContext(Dispatchers.IO) { index.voiceStats(container.ttsSettings.current.globalVoiceId) }
+        val (s, n) = withContext(Dispatchers.IO) {
+            index.voiceStats(container.ttsSettings.current.globalVoiceId) to
+                index.doneSegmentsWithBracketText().size
+        }
+        stats = s
+        bracketCount = n
     }
 
     fun playChapter(ch: Int, from: Int) {
@@ -214,6 +221,22 @@ fun TtsPanel(
                             container.ttsConverter.reconvertStaleVoice(book, includeUnknown = true)
                         }) { Text("全部重转", fontSize = 11.sp) }
                     }
+                }
+            }
+
+            // 括号杂音提示：这些段是 1.4.2 之前转的，原文里的 [..] / 【..】 被模型当成了演法提示
+            if (bracketCount > 0) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "有 $bracketCount 段原文含括号，之前转出来是杂音",
+                        fontSize = 10.5.sp,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        container.ttsConverter.reconvertBracketSegments(book)
+                    }) { Text("重转这 $bracketCount 段", fontSize = 11.sp) }
                 }
             }
 

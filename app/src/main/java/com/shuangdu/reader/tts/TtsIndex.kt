@@ -238,6 +238,20 @@ class TtsIndex(private val dir: File) {
             out
         }
 
+    /**
+     * 已经转好、但原文里含「会被 TTS 当标记」的括号的段（章, 段号）。
+     * 这些段的音频是 1.4.2 之前转的，多半是杂音，需要重转一次。
+     */
+    fun doneSegmentsWithBracketText(): List<Pair<Int, Int>> = synchronized(lock) {
+        val out = ArrayList<Pair<Int, Int>>()
+        chapters.forEach { (ch, list) ->
+            for (s in list) {
+                if (s.done && TtsText.needsSanitize(s.text)) out.add(ch to s.index)
+            }
+        }
+        out
+    }
+
     fun deleteAll() {
         synchronized(lock) {
             runCatching { dir.deleteRecursively() }
