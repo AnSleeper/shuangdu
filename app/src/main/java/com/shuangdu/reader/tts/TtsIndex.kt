@@ -11,7 +11,13 @@ data class TtsSegment(
     val file: String,
     val durationMs: Long = 0L,
     val done: Boolean = false,
-    val voice: String = ""
+    val voice: String = "",
+    /**
+     * 这段音频是用第几版「文本清洗规则」转的；0 = 没有记录（1.4.3 及更早转的）。
+     * 用来判断「原文含括号/表情/连串标点」的段是不是已经用清洗后的文本重转过了，
+     * 否则提示永远消不掉、还会被反复重转烧额度。
+     */
+    val sanVersion: Int = 0
 )
 
 /** 已转音频按音色归类：当前音色 / 别的音色（真混音）/ 来源未知（老版本转的） */
@@ -77,7 +83,8 @@ class TtsIndex(private val dir: File) {
                                 file = name,
                                 durationMs = s.optLong("d", 0L),
                                 done = s.optBoolean("ok", false) && audioFile(name).exists(),
-                                voice = s.optString("voice", "")
+                                voice = s.optString("voice", ""),
+                                sanVersion = s.optInt("s", 0)
                             )
                         )
                     }
@@ -132,6 +139,7 @@ class TtsIndex(private val dir: File) {
                                 .put("d", s.durationMs)
                                 .put("ok", s.done)
                                 .put("voice", s.voice)
+                                .put("s", s.sanVersion)
                         )
                     }
                     ch.put("segs", segArr)
@@ -173,13 +181,13 @@ class TtsIndex(private val dir: File) {
         }
     }
 
-    /** 一段转好了：标记 done 并记下用的音色 */
-    fun markDone(chapter: Int, segmentIndex: Int, voice: String) {
+    /** 一段转好了：标记 done、记下用的音色，以及采用的清洗规则版本 */
+    fun markDone(chapter: Int, segmentIndex: Int, voice: String, sanVersion: Int = TtsText.RULES_VERSION) {
         synchronized(lock) {
             val list = chapters[chapter] ?: return
             val i = list.indexOfFirst { it.index == segmentIndex }
             if (i < 0) return
-            list[i] = list[i].copy(done = true, voice = voice)
+            list[i] = list[i].copy(done = true, voice = voice, sanVersion = sanVersion)
             refreshChapterStats(chapter)
         }
     }
@@ -239,14 +247,17 @@ class TtsIndex(private val dir: File) {
         }
 
     /**
-     * 已经转好、但原文里含「送 TTS 前会被清洗掉的符号」的段（章, 段号）：
-     * 括号、表情符号、连串重复标点。这些段的音频是旧版本转的，多半是杂音，需要重转一次。
+     * 已经转好、但**还没用清洗后的文本重转过**的段（章, 段号）：
+     * 括号、表情符号、连串重复标点。用 `sanVersion` 区分「转过了」和「没转过」，
+     * 否则提示永远消不掉、点一次就重复烧一遍额度。
      */
     fun doneSegmentsNeedingSanitize(): List<Pair<Int, Int>> = synchronized(lock) {
         val out = ArrayList<Pair<Int, Int>>()
         chapters.forEach { (ch, list) ->
             for (s in list) {
-                if (s.done && TtsText.needsSanitize(s.text)) out.add(ch to s.index)
+                if (!s.done) continue
+                if (s.sanVersion >= TtsText.RULES_VERSION) continue
+                if (TtsText.needsSanitize(s.text)) out.add(ch to s.index)
             }
         }
         out
