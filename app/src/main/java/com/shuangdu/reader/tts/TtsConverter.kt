@@ -196,15 +196,15 @@ class TtsConverter(
     }
 
     /**
-     * 重转「原文里含括号」的段。
-     * 1.4.2 之前送合成时没清洗括号，Fish Audio 把里面的字当演法提示，转出来是杂音。
+     * 重转「原文里有会被误读的符号」的段（括号 / 表情 / 连串重复标点）。
+     * 这些段之前送合成时没清洗，Fish Audio 会把括号里的字当演法提示，转出来是杂音。
      * 只挑已经转好的段（没转的以后自然用清洗过的文本转）。
      */
-    fun reconvertBracketSegments(book: Book) {
+    fun reconvertUnsafeSegments(book: Book) {
         if (keyStore.load() == null) return
         scope.launch {
             val index = indexOf(book)
-            val targets = index.doneSegmentsWithBracketText()
+            val targets = index.doneSegmentsNeedingSanitize()
             if (targets.isEmpty()) return@launch
             enqueue(book, targets.map { key(it.first, it.second) })
         }

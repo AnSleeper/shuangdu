@@ -106,7 +106,7 @@ fun TtsPanel(
     LaunchedEffect(book.id, voiceTick, tts.globalVoiceId, prog?.finished, prog?.running) {
         val (s, n) = withContext(Dispatchers.IO) {
             index.voiceStats(container.ttsSettings.current.globalVoiceId) to
-                index.doneSegmentsWithBracketText().size
+                index.doneSegmentsNeedingSanitize().size
         }
         stats = s
         bracketCount = n
@@ -224,18 +224,18 @@ fun TtsPanel(
                 }
             }
 
-            // 括号杂音提示：这些段是 1.4.2 之前转的，原文里的 [..] / 【..】 被模型当成了演法提示
+            // 杂音提示：这些段是旧版本转的，原文里的括号/表情/连串标点会被模型当成标记或读出怪腔调
             if (bracketCount > 0) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "有 $bracketCount 段原文含括号，之前转出来是杂音",
+                        "有 $bracketCount 段原文含括号/表情/连串标点，之前转出来是杂音",
                         fontSize = 10.5.sp,
                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f),
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = {
-                        container.ttsConverter.reconvertBracketSegments(book)
+                        container.ttsConverter.reconvertUnsafeSegments(book)
                     }) { Text("重转这 $bracketCount 段", fontSize = 11.sp) }
                 }
             }

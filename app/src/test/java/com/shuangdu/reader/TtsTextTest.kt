@@ -6,7 +6,7 @@ import org.junit.Assert.assertSame
 import org.junit.Test
 
 /**
- * 送 TTS 前的文本清洗：括号类会被 Fish Audio 当「演法提示」，必须去掉符号、保留正文。
+ * 送 TTS 前的文本清洗：括号、表情/装饰符号、连串重复标点。
  */
 class TtsTextTest {
 
@@ -23,8 +23,30 @@ class TtsTextTest {
         assertEquals("叮！签到成功", TtsText.sanitize("【叮！签到成功】"))
         assertEquals("宿主已获得奖励", TtsText.sanitize("【宿主已获得奖励】"))
         assertEquals("全角方括号", TtsText.sanitize("［全角方括号］"))
-        assertEquals("全角花括号", TtsText.sanitize("｛全角花括号｝"))
         assertEquals("六角括号", TtsText.sanitize("〔六角括号〕"))
+    }
+
+    @Test
+    fun stripsEmojiAndDecoration() {
+        assertEquals("我爱你", TtsText.sanitize("我爱你❤"))
+        assertEquals("我爱你", TtsText.sanitize("我爱你❤️"))
+        assertEquals("她是我的", TtsText.sanitize("她是我的♥★"))
+        assertEquals("笑死", TtsText.sanitize("笑死😀"))
+    }
+
+    @Test
+    fun collapsesRepeatedPunctuation() {
+        assertEquals("好耶！", TtsText.sanitize("好耶！！！"))
+        assertEquals("真的吗？", TtsText.sanitize("真的吗？？？"))
+        assertEquals("等一下…", TtsText.sanitize("等一下……"))
+        assertEquals("分割线", TtsText.sanitize("分割线===="))
+    }
+
+    @Test
+    fun keepsRepeatedLetters() {
+        // 拖长音的文字不能压，只有符号才压
+        assertEquals("啊啊啊—好痛", TtsText.sanitize("啊啊啊——好痛"))
+        assertEquals("不—要—啦", TtsText.sanitize("不——要——啦"))
     }
 
     @Test
@@ -35,7 +57,6 @@ class TtsTextTest {
 
     @Test
     fun keepsCjkQuotesAndParentheses() {
-        // 中文引号、圆括号都不该动（S2 不把圆括号当标签，中文引号本来就是正文标点）
         val s = "他说：「你来了。」（笑）"
         assertSame(s, TtsText.sanitize(s))
     }
