@@ -611,10 +611,7 @@ fun ReaderScreen(
                 )
                 if (playerState.timerRemainingMs > 0) {
                     Text(
-                        "%d:%02d".format(
-                            playerState.timerRemainingMs / 60000,
-                            (playerState.timerRemainingMs / 1000) % 60
-                        ),
+                        formatCountdown(playerState.timerRemainingMs),
                         fontSize = 10.sp,
                         color = Color.White
                     )

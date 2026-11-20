@@ -357,13 +357,11 @@ fun TtsPanel(
                         }
                     }
                 }
-                ActionChip(if (timerMinutes > 0) "定时 ${timerMinutes}分" else "定时 关") {
-                    val next = when (timerMinutes) {
-                        0 -> 15
-                        15 -> 30
-                        30 -> 60
-                        else -> 0
-                    }
+                ActionChip(timerLabel(timerMinutes)) {
+                    // 0 → 30 → 60 → 90 → 120 → 0（半小时一档，最长 2 小时）
+                    val idx = TIMER_STEPS.indexOf(timerMinutes)
+                    val next = if (idx == -1) TIMER_STEPS.first()
+                    else TIMER_STEPS.getOrElse(idx + 1) { 0 }
                     container.ttsPlayer.setTimerMinutes(next)
                 }
                 if (timerRemaining > 0) {
@@ -732,7 +730,22 @@ private fun ActionChip(text: String, onClick: () -> Unit) {
     }
 }
 
-private fun formatCountdown(ms: Long): String {
-    val totalSec = ms / 1000
-    return "%d:%02d".format(totalSec / 60, totalSec % 60)
+/** 定时档位：半小时一档，最长 2 小时 */
+private val TIMER_STEPS = listOf(30, 60, 90, 120)
+
+/** 定时按钮上的文案：2 小时显示成「2 小时」而不是「120 分」 */
+private fun timerLabel(min: Int): String = when {
+    min <= 0 -> "定时 关"
+    min < 60 -> "定时 $min 分"
+    min % 60 == 0 -> "定时 ${min / 60} 小时"
+    min % 30 == 0 -> "定时 ${min / 60}.5 小时"
+    else -> "定时 ${min / 60} 小时 ${min % 60} 分"
+}
+
+internal fun formatCountdown(ms: Long): String {
+    val totalSec = (ms / 1000).coerceAtLeast(0)
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
