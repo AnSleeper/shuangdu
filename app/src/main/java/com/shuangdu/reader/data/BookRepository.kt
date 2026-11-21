@@ -211,6 +211,16 @@ class BookRepository(
 
     fun chapterCount(book: Book): Int = loadChapters(book).size
 
+    /** 听书音频状态落盘（书架角标用）；批量补算时可以攒着最后统一存 */
+    fun updateAudioState(id: String, state: Int, persist: Boolean = true) {
+        library.updateAudioState(id, state, persist)
+    }
+
+    fun saveLibrary() = library.saveAsync()
+
+    /** 批量写回音频状态（书架补算用） */
+    fun setAudioStates(states: Map<String, Int>) = library.setAudioStates(states)
+
     fun readChapter(book: Book, index: Int): String {
         val cacheKey = "${book.id}:$index"
         synchronized(textCache) { textCache[cacheKey]?.let { return it } }

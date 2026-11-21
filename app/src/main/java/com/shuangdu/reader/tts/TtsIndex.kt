@@ -155,7 +155,40 @@ class TtsIndex(private val dir: File) {
                     file.delete()
                     tmp.renameTo(file)
                 }
+                writeStatLocked()
             }
+        }
+    }
+
+    /**
+     * 摘要文件：几十字节，只有「已完成章数 / 有音频的章数」。
+     * 书架角标读它，不用为了一个图标把整本 index.json（含全部段落正文）解析进内存。
+     */
+    private fun writeStatLocked() {
+        runCatching {
+            dir.mkdirs()
+            File(dir, "stat.json").writeText(
+                JSONObject()
+                    .put("done", completeChapters.size)
+                    .put("chapters", chapters.size)
+                    .toString()
+            )
+        }
+    }
+
+    fun writeStat() {
+        synchronized(lock) { writeStatLocked() }
+    }
+
+    companion object {
+        /** 读摘要；没有（老数据）返回 null，调用方再决定要不要解析整本 */
+        fun readStat(dir: File): Pair<Int, Int>? {
+            val f = File(dir, "stat.json")
+            if (!f.exists()) return null
+            return runCatching {
+                val o = JSONObject(f.readText())
+                o.optInt("done", 0) to o.optInt("chapters", 0)
+            }.getOrNull()
         }
     }
 

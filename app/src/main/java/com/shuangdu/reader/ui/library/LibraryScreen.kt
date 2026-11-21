@@ -381,7 +381,8 @@ fun LibraryScreen(
                         coverPath = container.repository.coverFile(book)?.absolutePath,
                         selectionMode = selectionMode,
                         selected = book.id in selected,
-                        audioState = audioStates[book.id] ?: 0,
+                        // 先用落盘结论兜底，补算完再由 audioStates 覆盖 —— 角标不用等扫描就能出来
+                        audioState = audioStates[book.id] ?: if (book.audioState >= 0) book.audioState else 0,
                         ttsRunning = p?.running == true,
                         ttsProgress = p?.fraction ?: 0f,
                         queueLabel = if (qIdx >= 0 && p?.running != true) "排队 #${qIdx + 1}" else null,

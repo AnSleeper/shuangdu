@@ -112,38 +112,79 @@ class TtsConverter(
 
     fun progressOf(bookId: String): Progress? = _state.value[bookId]
 
-    /** 算一本书的状态并广播（O(1)，不遍历段） */
+    private fun stateOf(done: Int, total: Int) = when {
+        done <= 0 -> 0
+        total > 0 && done >= total -> 2
+        else -> 1
+    }
+
+    /** 算一本书的状态：广播 + 落盘（下次开应用书架直接显示，不用再扫） */
     fun refreshAudioState(book: Book) {
         val index = indexOf(book)
         val done = index.completedChapterCount()
-        val total = repo.chapterCount(book)
-        val state = when {
-            done <= 0 -> 0
-            total > 0 && done >= total -> 2
-            else -> 1
-        }
+        val total = if (book.totalChapters > 0) book.totalChapters else repo.chapterCount(book)
+        publishAudioState(book, stateOf(done, total))
+    }
+
+    private fun publishAudioState(book: Book, state: Int, persist: Boolean = true) {
         if (_audioStates.value[book.id] != state) {
             _audioStates.value = _audioStates.value.toMutableMap().apply { put(book.id, state) }
         }
+        if (persist) repo.updateAudioState(book.id, state, persist = true)
     }
 
-    /** 书架首次加载时补算还没算过的书（IO 线程调用） */
+    /**
+     * 书架补算音频状态。**不再解析整本 index.json**：
+     * - 元数据里已经有结论（audioState >= 0）→ 直接用；
+     * - 没有 tts/index.json → 0，连打开都不打开；
+     * - 有 stat.json（几十字节）→ 只读它；
+     * - 只有 1.4.5 及更早的老书没有 stat.json，才临时建一次索引，算完写回摘要立刻丢掉，
+     *   **绝不放进 indexes 缓存**。
+     *
+     * 之前是每本书都 indexOf() 整本解析并常驻内存：书一多，启动卡死 + 内存爆掉闪退。
+     */
+    @Volatile
+    private var backfilling = false
+
     fun ensureAudioStates(books: List<Book>) {
-        var changed = false
-        val map = _audioStates.value.toMutableMap()
-        books.forEach { b ->
-            if (map.containsKey(b.id)) return@forEach
-            val index = indexOf(b)
-            val done = index.completedChapterCount()
-            val total = repo.chapterCount(b)
-            map[b.id] = when {
-                done <= 0 -> 0
-                total > 0 && done >= total -> 2
-                else -> 1
+        if (backfilling) return
+        backfilling = true
+        scope.launch {
+            val computed = HashMap<String, Int>()
+            try {
+                for (b in books) {
+                    if (_audioStates.value.containsKey(b.id)) continue
+                    if (b.audioState >= 0) {
+                        _audioStates.value = _audioStates.value.toMutableMap().apply { put(b.id, b.audioState) }
+                        continue
+                    }
+                    val dir = File(repo.bookDir(b.id), "tts")
+                    if (!File(dir, "index.json").exists()) {
+                        publishAudioState(b, 0, persist = false)
+                        computed[b.id] = 0
+                        continue
+                    }
+                    val total = if (b.totalChapters > 0) b.totalChapters else repo.chapterCount(b)
+                    val stat = TtsIndex.readStat(dir)
+                    val state = if (stat != null) {
+                        stateOf(stat.first, total)
+                    } else {
+                        // 老数据：临时解析一次，写完摘要就丢，不进缓存
+                        val tmp = TtsIndex(dir).also { it.load() }
+                        val s = stateOf(tmp.completedChapterCount(), total)
+                        tmp.writeStat()
+                        s
+                    }
+                    publishAudioState(b, state, persist = false)
+                    computed[b.id] = state
+                    kotlinx.coroutines.yield()
+                }
+            } finally {
+                // 攒到最后一次性写回：几百本书只改一次列表、只落盘一次
+                runCatching { repo.setAudioStates(computed) }
+                backfilling = false
             }
-            changed = true
         }
-        if (changed) _audioStates.value = map
     }
 
     fun forget(bookId: String) {

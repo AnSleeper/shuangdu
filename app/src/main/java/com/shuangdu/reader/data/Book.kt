@@ -23,7 +23,12 @@ data class Book(
     val chapterTitle: String,
     val totalChapters: Int,
     val finished: Boolean = false,
-    val groupId: String? = null
+    val groupId: String? = null,
+    /**
+     * 听书音频状态（落盘，书架直接读，不再为了一个角标去解析整本 tts 索引）：
+     * -1 = 还没算过（老数据），0 = 没转，1 = 部分转好，2 = 整本转完
+     */
+    val audioState: Int = -1
 ) {
     val formatName: String get() = if (format == BookFormat.EPUB) "EPUB" else "TXT"
 
@@ -43,6 +48,7 @@ data class Book(
         put("totalChapters", totalChapters)
         put("finished", finished)
         put("groupId", groupId ?: "")
+        put("audio", audioState)
     }
 
     companion object {
@@ -62,7 +68,8 @@ data class Book(
             chapterTitle = o.optString("chapterTitle", ""),
             totalChapters = o.optInt("totalChapters", 1),
             finished = o.optBoolean("finished", false),
-            groupId = o.optString("groupId", "").ifBlank { null }
+            groupId = o.optString("groupId", "").ifBlank { null },
+            audioState = o.optInt("audio", -1)
         )
     }
 }

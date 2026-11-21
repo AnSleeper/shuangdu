@@ -88,6 +88,22 @@ class LibraryStore(context: Context) {
         upsert(updated)
     }
 
+    /** 批量写回音频状态：书架补算时几百本书只改一次列表、只落盘一次 */
+    fun setAudioStates(states: Map<String, Int>) {
+        if (states.isEmpty()) return
+        val list = _books.value.map { b -> states[b.id]?.let { b.copy(audioState = it) } ?: b }
+        if (list == _books.value) return
+        _books.value = sortBooks(list)
+        saveAsync()
+    }
+
+    /** 听书音频状态（0/1/2）。只在真变化时落盘，避免转换过程中反复写 library.json */
+    fun updateAudioState(id: String, state: Int, persist: Boolean = true) {
+        val book = find(id) ?: return
+        if (book.audioState == state) return
+        upsert(book.copy(audioState = state), save = persist)
+    }
+
     fun remove(id: String) {
         _books.value = _books.value.filterNot { it.id == id }
         saveAsync()
