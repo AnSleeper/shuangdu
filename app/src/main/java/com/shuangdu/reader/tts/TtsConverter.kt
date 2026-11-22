@@ -20,6 +20,12 @@ import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
+/** 升级后第一次补算书架角标：等首屏画完再动手，别和首帧抢 IO */
+private const val FIRST_BACKFILL_DELAY_MS = 1500L
+
+/** 补算时每算这么多本才推一次 UI，避免几十次全屏重组 */
+private const val BACKFILL_FLUSH_EVERY = 8
+
 /**
  * 把整本书（或指定章节、指定段）转成音频。
  *
@@ -134,14 +140,14 @@ class TtsConverter(
     }
 
     /**
-     * 书架补算音频状态。**不再解析整本 index.json**：
-     * - 元数据里已经有结论（audioState >= 0）→ 直接用；
+     * 书架补算音频状态。**不解析整本 index.json**：
+     * - 元数据里已经有结论（audioState >= 0）→ 直接用，并且立刻点亮（纯内存，不等）；
      * - 没有 tts/index.json → 0，连打开都不打开；
      * - 有 stat.json（几十字节）→ 只读它；
-     * - 只有 1.4.5 及更早的老书没有 stat.json，才临时建一次索引，算完写回摘要立刻丢掉，
-     *   **绝不放进 indexes 缓存**。
+     * - 只有老书没有 stat.json，才流式扫一遍（不建对象、不留正文），算完写回摘要。
      *
-     * 之前是每本书都 indexOf() 整本解析并常驻内存：书一多，启动卡死 + 内存爆掉闪退。
+     * 真正要扫的老书会等首屏画完（1.5s）再开始，并且每算 8 本才推一次 UI ——
+     * 否则升级后第一次打开，几十本的磁盘 IO + 几十次全屏重组会持续发涩。
      */
     @Volatile
     private var backfilling = false
@@ -150,41 +156,62 @@ class TtsConverter(
         if (backfilling) return
         backfilling = true
         scope.launch {
+            val known = HashMap<String, Int>()
+            val todo = ArrayList<Book>()
+            for (b in books) {
+                if (_audioStates.value.containsKey(b.id)) continue
+                if (b.audioState >= 0) known[b.id] = b.audioState else todo.add(b)
+            }
+            if (known.isNotEmpty()) mergeAudioStates(known)
+            if (todo.isEmpty()) {
+                backfilling = false
+                return@launch
+            }
+
+            kotlinx.coroutines.delay(FIRST_BACKFILL_DELAY_MS)
+
             val computed = HashMap<String, Int>()
+            var sinceFlush = 0
             try {
-                for (b in books) {
-                    if (_audioStates.value.containsKey(b.id)) continue
-                    if (b.audioState >= 0) {
-                        _audioStates.value = _audioStates.value.toMutableMap().apply { put(b.id, b.audioState) }
-                        continue
+                for (b in todo) {
+                    computed[b.id] = computeAudioState(b)
+                    sinceFlush++
+                    if (sinceFlush >= BACKFILL_FLUSH_EVERY) {
+                        mergeAudioStates(computed)
+                        sinceFlush = 0
                     }
-                    val dir = File(repo.bookDir(b.id), "tts")
-                    if (!File(dir, "index.json").exists()) {
-                        publishAudioState(b, 0, persist = false)
-                        computed[b.id] = 0
-                        continue
-                    }
-                    val total = if (b.totalChapters > 0) b.totalChapters else repo.chapterCount(b)
-                    val stat = TtsIndex.readStat(dir)
-                    val state = if (stat != null) {
-                        stateOf(stat.first, total)
-                    } else {
-                        // 老数据：临时解析一次，写完摘要就丢，不进缓存
-                        val tmp = TtsIndex(dir).also { it.load() }
-                        val s = stateOf(tmp.completedChapterCount(), total)
-                        tmp.writeStat()
-                        s
-                    }
-                    publishAudioState(b, state, persist = false)
-                    computed[b.id] = state
                     kotlinx.coroutines.yield()
                 }
             } finally {
-                // 攒到最后一次性写回：几百本书只改一次列表、只落盘一次
-                runCatching { repo.setAudioStates(computed) }
+                if (computed.isNotEmpty()) {
+                    mergeAudioStates(computed)
+                    // 攒到最后一次性写回：几百本书只改一次列表、只落盘一次
+                    runCatching { repo.setAudioStates(computed) }
+                }
                 backfilling = false
             }
         }
+    }
+
+    /** 一次赋值把一批状态灌进状态流（避免每本一次全屏重组） */
+    private fun mergeAudioStates(states: Map<String, Int>) {
+        if (states.isEmpty()) return
+        val cur = _audioStates.value
+        val next = HashMap<String, Int>(cur.size + states.size)
+        next.putAll(cur)
+        next.putAll(states)
+        _audioStates.value = next
+    }
+
+    /** 从磁盘算一本书的状态：stat.json 优先，没有就流式扫 index.json 并写回摘要 */
+    private fun computeAudioState(b: Book): Int {
+        val dir = File(repo.bookDir(b.id), "tts")
+        if (!File(dir, "index.json").exists()) return 0
+        val total = if (b.totalChapters > 0) b.totalChapters else repo.chapterCount(b)
+        TtsIndex.readStat(dir)?.let { return stateOf(it.first, total) }
+        val done = TtsIndex.countDoneChapters(dir) ?: 0
+        TtsIndex.writeStat(dir, done)
+        return stateOf(done, total)
     }
 
     fun forget(bookId: String) {

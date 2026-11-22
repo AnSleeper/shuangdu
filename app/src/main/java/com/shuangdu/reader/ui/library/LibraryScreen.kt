@@ -376,9 +376,13 @@ fun LibraryScreen(
                 items(visible, key = { it.id }) { book ->
                     val p = ttsMap[book.id]
                     val qIdx = batchQueue.indexOf(book.id)
+                    // coverFile() 里是两次 File stat，滑动时每帧都做太浪费，按 id 记一次
+                    val coverPath = remember(book.id, book.hasCover) {
+                        container.repository.coverFile(book)?.absolutePath
+                    }
                     BookCard(
                         book = book,
-                        coverPath = container.repository.coverFile(book)?.absolutePath,
+                        coverPath = coverPath,
                         selectionMode = selectionMode,
                         selected = book.id in selected,
                         // 先用落盘结论兜底，补算完再由 audioStates 覆盖 —— 角标不用等扫描就能出来

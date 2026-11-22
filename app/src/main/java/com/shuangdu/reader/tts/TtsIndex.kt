@@ -190,6 +190,70 @@ class TtsIndex(private val dir: File) {
                 o.optInt("done", 0) to o.optInt("chapters", 0)
             }.getOrNull()
         }
+
+        /** 只写摘要，不碰 index.json */
+        fun writeStat(dir: File, doneChapters: Int) {
+            runCatching {
+                dir.mkdirs()
+                File(dir, "stat.json").writeText(JSONObject().put("done", doneChapters).toString())
+            }
+        }
+
+        /**
+         * 流式统计「已完成的章数」——只在补算书架角标时用。
+         * 不建 TtsSegment、不把每段正文读进内存，内存峰值从几十 MB 降到几百 KB。
+         * 注意：不像 [load] 那样逐段校验音频文件是否存在（那要 N 次 stat，代价太高）；
+         * 文件被外部删掉的情况极少，且下次真正加载时会自动纠正。
+         */
+        fun countDoneChapters(dir: File): Int? {
+            val f = File(dir, "index.json")
+            if (!f.exists()) return null
+            return runCatching {
+                var done = 0
+                f.bufferedReader().use { br ->
+                    val r = android.util.JsonReader(br)
+                    r.beginObject()
+                    while (r.hasNext()) {
+                        when (r.nextName()) {
+                            "chapters" -> {
+                                r.beginArray()
+                                while (r.hasNext()) {
+                                    var total = 0
+                                    var okCount = 0
+                                    r.beginObject()
+                                    while (r.hasNext()) {
+                                        when (r.nextName()) {
+                                            "segs" -> {
+                                                r.beginArray()
+                                                while (r.hasNext()) {
+                                                    total++
+                                                    r.beginObject()
+                                                    while (r.hasNext()) {
+                                                        when (r.nextName()) {
+                                                            "ok" -> if (r.nextBoolean()) okCount++
+                                                            else -> r.skipValue()
+                                                        }
+                                                    }
+                                                    r.endObject()
+                                                }
+                                                r.endArray()
+                                            }
+                                            else -> r.skipValue()
+                                        }
+                                    }
+                                    r.endObject()
+                                    if (total > 0 && okCount == total) done++
+                                }
+                                r.endArray()
+                            }
+                            else -> r.skipValue()
+                        }
+                    }
+                    r.endObject()
+                }
+                done
+            }.getOrNull()
+        }
     }
 
     /** 返回副本：播放器/导出线程会遍历它，不能把内部可变表交出去 */
