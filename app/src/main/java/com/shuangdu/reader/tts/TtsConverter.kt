@@ -109,10 +109,18 @@ class TtsConverter(
 
     // ---------------------------------------------------------------- 状态查询
 
-    fun indexOf(book: Book): TtsIndex =
+    /**
+     * 取一本书的索引（全局唯一实例）。
+     * 现在会从 IO 线程调用（阅读页异步加载），所以要加锁：并发进来时只能建一个实例，
+     * 否则面板和阅读页各持一份，改动互相看不见。
+     */
+    private val indexLock = Any()
+
+    fun indexOf(book: Book): TtsIndex = synchronized(indexLock) {
         indexes.getOrPut(book.id) {
             TtsIndex(File(repo.bookDir(book.id), "tts")).also { it.load() }
         }
+    }
 
     fun isRunning(bookId: String): Boolean = runs[bookId]?.job?.isActive == true
 

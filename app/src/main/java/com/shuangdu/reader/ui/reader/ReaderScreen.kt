@@ -140,7 +140,12 @@ fun ReaderScreen(
     var showTts by remember { mutableStateOf(false) }
     var textArea by remember { mutableStateOf(IntSize.Zero) }
     var rootSize by remember { mutableStateOf(IntSize.Zero) }
-    val ttsIndex = remember(book.id) { container.ttsConverter.indexOf(book) }
+    // 听书索引里存着每段正文（几 MB），在组合期同步解析会让「点书 → 进书」卡住一秒，
+    // 而且那一刻还停在书架上（手感就是"划不动"）。改成后台加载，读完再刷新相关 UI。
+    var ttsIndex by remember(book.id) { mutableStateOf<com.shuangdu.reader.tts.TtsIndex?>(null) }
+    LaunchedEffect(book.id) {
+        ttsIndex = withContext(Dispatchers.IO) { container.ttsConverter.indexOf(book) }
+    }
     val ttsDir = remember(book.id) { java.io.File(container.repository.bookDir(book.id), "tts") }
     val playerState by container.ttsPlayer.state.collectAsStateWithLifecycle()
     val ttsCfg by container.ttsSettings.state.collectAsStateWithLifecycle()
@@ -278,7 +283,7 @@ fun ReaderScreen(
         val src = engine.current as? PaginatedChapter ?: return 0
         val pageStart = src.charOffsetAtPage(engine.page)
         val text = src.displayText
-        val segs = ttsIndex.segmentsOf(engine.chapterIndex)
+        val segs = ttsIndex?.segmentsOf(engine.chapterIndex) ?: return 0
         for (s in segs) {
             val i = text.indexOf(s.text)
             if (i >= pageStart) return s.index
@@ -311,7 +316,7 @@ fun ReaderScreen(
             return@LaunchedEffect
         }
         val seg = playerState.segments.firstOrNull { it.index == playerState.segment }
-            ?: ttsIndex.segmentsOf(engine.chapterIndex).firstOrNull { it.index == playerState.segment }
+            ?: ttsIndex?.segmentsOf(engine.chapterIndex)?.firstOrNull { it.index == playerState.segment }
             ?: return@LaunchedEffect
         val color = (pal.primary.copy(alpha = 0.22f)).toArgb()
         val idx = src.highlightByText(seg.text, color)
@@ -596,7 +601,7 @@ fun ReaderScreen(
                     modifier = Modifier
                         .size(21.dp)
                         .clickable {
-                            val segs = ttsIndex.segmentsOf(engine.chapterIndex)
+                            val segs = ttsIndex?.segmentsOf(engine.chapterIndex) ?: emptyList()
                             if (segs.any { it.done }) {
                                 container.ttsPlayer.play(
                                     book.id,
@@ -645,7 +650,7 @@ fun ReaderScreen(
         bookTitle = book.title,
         titles = engine.chapterTitles,
         current = engine.chapterIndex,
-        audioChapters = ttsIndex.completedChapters().toSet(),
+        audioChapters = ttsIndex?.completedChapters()?.toSet() ?: emptySet(),
         onSelect = { jumpToChapter(it) },
         onDismiss = { showChapters = false }
     )
