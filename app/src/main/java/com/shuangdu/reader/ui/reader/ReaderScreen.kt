@@ -106,6 +106,9 @@ import com.shuangdu.reader.util.findActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -149,6 +152,21 @@ fun ReaderScreen(
     val ttsDir = remember(book.id) { java.io.File(container.repository.bookDir(book.id), "tts") }
     val playerState by container.ttsPlayer.state.collectAsStateWithLifecycle()
     val ttsCfg by container.ttsSettings.state.collectAsStateWithLifecycle()
+
+    /**
+     * 打开听书面板。索引还在后台读时先等它读完再开——
+     * 否则面板会撞上那把索引锁，在主线程干等，表现出来就是"点听书卡住一下"。
+     */
+    fun openTtsPanel() {
+        if (ttsIndex != null) {
+            showTts = true
+            return
+        }
+        scope.launch {
+            withTimeoutOrNull(1500) { snapshotFlow { ttsIndex }.first { it != null } }
+            showTts = true
+        }
+    }
 
     val statusBar = with(density) { WindowInsets.statusBars.asPaddingValues().calculateTopPadding() }
     val navBar = with(density) { WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() }
@@ -501,7 +519,7 @@ fun ReaderScreen(
                 onPrev = { prevChapterJump() },
                 onNext = { nextChapter() },
                 onSettings = { showSettings = true },
-                onTts = { showTts = true },
+                onTts = { openTtsPanel() },
                 onSeek = { jumpToChapter(it) }
             )
         }
@@ -560,7 +578,7 @@ fun ReaderScreen(
                     }
                     .clip(RoundedCornerShape(50))
                     .background(Color.Black.copy(alpha = 0.72f))
-                    .clickable { showTts = true }
+                    .clickable { openTtsPanel() }
                     .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
